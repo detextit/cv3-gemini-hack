@@ -86,6 +86,16 @@ COORDINATE SYSTEM:
 - x: 0 = left edge, 50 = center, 100 = right edge
 - y: 0 = top edge, 50 = middle, 100 = bottom edge
 
+CRITICAL - AVOID CONGESTED OVERLAYS:
+- Use MAXIMUM 3-4 annotations/labels total across ALL tool calls
+- Labels must be spaced at least 15 units apart (in x or y) to prevent overlap
+- Choose EITHER line labels OR separate annotations for the same concept - NEVER BOTH
+- If a line already has a label, do NOT add a nearby annotation with similar text
+- Prioritize only the MOST IMPORTANT 2-3 tactical elements to label
+- Leave obvious movements unlabeled - let the arrows/lines speak for themselves
+- Place labels at the END of lines or in clear open areas of the frame
+- When in doubt, use FEWER labels - clarity over completeness
+
 After all tool calls, provide a final text summary of your analysis.
 
 TONE:
@@ -370,29 +380,7 @@ function mergeOverlayData(accumulated: PlayDiagramSpec, newData: OverlayData): P
   };
 }
 
-/**
- * Generate deterministic initial overlays to show immediately
- * These provide instant visual feedback while waiting for the model
- */
-function generateInitialOverlays(callback: AgentCallback): void {
-  // Scanning overlay - shows the analysis has started
-  const scanningOverlay: ShowOverlayArgs = {
-    id: 'initial-scan',
-    overlay: {
-      annotations: [
-        { id: 'scan-label', position: { x: 50, y: 5 }, text: '🔍 Scanning frame...' }
-      ]
-    },
-    thinking: 'Initializing visual analysis...',
-    stage: 'capture'
-  };
 
-  callback({
-    type: 'tool_call',
-    toolName: 'show_overlay',
-    args: scanningOverlay
-  });
-}
 
 /**
  * Agentic analysis with tool calling loop
@@ -408,8 +396,8 @@ export const analyzeMediaAgentic = async (
   const MIN_ITERATIONS = 5;  // Minimum tool calls before completion
   const modelName = 'gemini-3-flash-preview';
 
-  // Send deterministic initial overlays immediately for faster perceived response
-  generateInitialOverlays(callback);
+  // Note: We no longer generate deterministic overlays here.
+  // Instead, the UI shows a CSS-based processing effect for better UX.
 
   // Accumulated visualization from all tool calls
   let accumulatedSpec: PlayDiagramSpec = {
