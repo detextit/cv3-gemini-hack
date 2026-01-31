@@ -442,12 +442,17 @@ export const analyzeMediaAgentic = async (
   // Track tool call count for minimum iterations
   let toolCallCount = 0;
 
+  // Track latency for first response
+  const startTime = performance.now();
+  let firstResponseLogged = false;
+
   try {
     log('=== STARTING AGENT LOOP ===');
     log('Prompt:', prompt);
     log('Image MIME type:', payload.mimeType);
     log('Image base64 length:', payload.base64.length);
     log('MIN_ITERATIONS:', MIN_ITERATIONS);
+    log('Start time:', new Date().toISOString());
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
       log(`\n--- ITERATION ${iteration + 1}/${MAX_ITERATIONS} (tool calls: ${toolCallCount}) ---`);
@@ -464,6 +469,15 @@ export const analyzeMediaAgentic = async (
       });
 
       log('Response received');
+
+      // Log first response latency
+      if (!firstResponseLogged) {
+        const firstResponseLatency = performance.now() - startTime;
+        log(`🕐 FIRST RESPONSE LATENCY: ${firstResponseLatency.toFixed(0)}ms`);
+        console.log(`%c🕐 First Response Latency: ${firstResponseLatency.toFixed(0)}ms`, 'color: #f59e0b; font-weight: bold; font-size: 14px');
+        firstResponseLogged = true;
+      }
+
       log('Candidates count:', response.candidates?.length);
 
       const candidate = response.candidates?.[0];
