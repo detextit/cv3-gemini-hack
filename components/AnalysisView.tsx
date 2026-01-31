@@ -19,8 +19,17 @@ interface AnalysisViewProps {
 const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, onAnalyze }) => {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
   const [overlayDimensions, setOverlayDimensions] = useState({ width: 0, height: 0 });
   const mediaContainerRef = useRef<HTMLDivElement>(null);
+  const analyzingRef = useRef(false);
+
+  const ANALYSIS_STEPS = [
+    { title: 'Capturing frame', subtitle: 'Locking onto the current moment.' },
+    { title: 'Thinking', subtitle: 'Parsing movement, spacing, and intent.' },
+    { title: 'Diagramming', subtitle: 'Sketching lanes, rotations, and zones.' },
+    { title: 'Finalizing', subtitle: 'Packaging the play breakdown.' },
+  ];
 
   // Update overlay dimensions when media container changes
   useEffect(() => {
@@ -53,8 +62,31 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
     };
   }, [videoRef]);
 
+  useEffect(() => {
+    analyzingRef.current = isAnalyzing;
+  }, [isAnalyzing]);
+
+  useEffect(() => {
+    if (!isAnalyzing) {
+      setActiveStepIndex(null);
+      return;
+    }
+
+    let currentIndex = 0;
+    setActiveStepIndex(currentIndex);
+
+    const interval = window.setInterval(() => {
+      if (!analyzingRef.current) return;
+      currentIndex = Math.min(currentIndex + 1, ANALYSIS_STEPS.length - 1);
+      setActiveStepIndex(currentIndex);
+    }, 1600);
+
+    return () => window.clearInterval(interval);
+  }, [isAnalyzing, ANALYSIS_STEPS.length]);
+
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
+    setAnalysis(null);
     try {
       const result = await onAnalyze();
       setAnalysis(result);
@@ -110,6 +142,22 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
                 containerWidth={overlayDimensions.width}
                 containerHeight={overlayDimensions.height}
               />
+            )}
+
+            {isAnalyzing && activeStepIndex !== null && (
+              <div className="absolute inset-0 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
+                <div className="flex flex-col items-center gap-3 text-center px-6 py-5 rounded-xl border border-slate-700/60 bg-slate-950/70 shadow-lg shadow-black/40 animate-in fade-in zoom-in-95 duration-300">
+                  <Loader2 className="w-6 h-6 text-slate-200 animate-spin" />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-100">
+                      {ANALYSIS_STEPS[activeStepIndex].title}
+                    </p>
+                    <p className="text-xs text-slate-300">
+                      {ANALYSIS_STEPS[activeStepIndex].subtitle}
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </div>

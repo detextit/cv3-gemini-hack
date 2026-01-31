@@ -1,6 +1,8 @@
 .claude
 node_modules
 package-lock.json
+dist
+.codex
 
 
 *.DS_Store
