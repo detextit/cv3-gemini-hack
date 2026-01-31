@@ -42,6 +42,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
   const [overlayDimensions, setOverlayDimensions] = useState({ width: 0, height: 0 });
   const mediaWrapperRef = useRef<HTMLDivElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   // Agentic state - accumulated overlay and thinking steps
   const [accumulatedOverlay, setAccumulatedOverlay] = useState<PlayDiagramSpec>({
@@ -157,7 +158,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
     }
   };
 
-  
+
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
@@ -186,6 +187,26 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
       setCurrentStage(null);
     }
   };
+
+  // Auto-analyze if requested (e.g. from demo clips)
+  useEffect(() => {
+    if (media.autoAnalyze && !isAnalyzing && !analysis) {
+      // Small delay to ensure video ref is attached and ready
+      const timer = setTimeout(() => {
+        if (videoRef?.current) {
+          if (videoRef.current.readyState >= 2) {
+            handleAnalyze();
+          } else {
+            videoRef.current.onloadeddata = () => handleAnalyze();
+          }
+        } else {
+          // If no video ref (e.g. image), just analyze
+          handleAnalyze();
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [media.autoAnalyze, media.file]); // Depend on media changing
 
   // Check if we have any overlay elements to show
   const hasOverlayElements = accumulatedOverlay.attackLines?.length ||
@@ -224,6 +245,8 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
               autoPlay
               loop
               muted
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
             />
           ) : (
             <img
@@ -259,7 +282,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
 
           {/* Overlay container - positioned exactly over the media element */}
           {isAnalyzing && hasOverlayElements && overlayDimensions.width > 0 && (
-            <div className="absolute inset-0">
+            <div className="absolute inset-0 pointer-events-none">
               <VideoOverlay
                 specs={[accumulatedOverlay]}
                 containerWidth={overlayDimensions.width}
@@ -270,7 +293,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
 
           {/* Show final overlay after analysis completes */}
           {!isAnalyzing && analysis?.visualizations && overlayDimensions.width > 0 && (
-            <div className="absolute inset-0">
+            <div className={`absolute inset-0 pointer-events-none transition-opacity duration-1000 ${isPlaying ? 'opacity-0' : 'opacity-100'}`}>
               <VideoOverlay
                 specs={analysis.visualizations}
                 containerWidth={overlayDimensions.width}

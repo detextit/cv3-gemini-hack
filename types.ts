@@ -9,6 +9,7 @@ export interface MediaAsset {
   type: MediaType;
   base64?: string;
   mimeType: string;
+  autoAnalyze?: boolean;
 }
 
 export interface Message {
