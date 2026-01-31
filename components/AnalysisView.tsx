@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MediaAsset, MediaType, VisualizationSpec } from '../types';
-import { X, PlayCircle, Sparkles, Loader2, Bot } from 'lucide-react';
+import { X, PlayCircle, Sparkles, Loader2, Bot, EyeOff } from 'lucide-react';
 import { VideoOverlay } from './VideoOverlay';
 import ReactMarkdown from 'react-markdown';
 
@@ -198,8 +198,18 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
                 <ReactMarkdown>{analysis.text}</ReactMarkdown>
               </div>
 
-              {/* Re-analyze button */}
-              <div className="pt-4 border-t border-slate-800">
+              {/* Action buttons */}
+              <div className="pt-4 border-t border-slate-800 space-y-2">
+                {/* Clear overlays button - only show if there are visualizations */}
+                {analysis.visualizations && analysis.visualizations.length > 0 && (
+                  <button
+                    onClick={() => setAnalysis({ ...analysis, visualizations: undefined })}
+                    className="w-full px-4 py-2.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2 border border-red-600/30"
+                  >
+                    <EyeOff size={16} />
+                    Clear Overlays
+                  </button>
+                )}
                 <button
                   onClick={handleAnalyze}
                   className="w-full px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"

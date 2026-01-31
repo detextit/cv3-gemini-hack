@@ -1,5 +1,5 @@
 import React from 'react';
-import { VisualizationSpec, BoundingBox as BoundingBoxType } from '../types';
+import { VisualizationSpec, AttackLine, DefenseLine, MovementPath, ZoneRegion, Annotation, Position } from '../types';
 
 interface VideoOverlayProps {
     specs: VisualizationSpec[];
@@ -7,9 +7,26 @@ interface VideoOverlayProps {
     containerHeight: number;
 }
 
+// Colors for different line types
+const COLORS = {
+    attack: '#ef4444',      // Red for attack/offense
+    defense: '#3b82f6',     // Blue for defense
+    neutral: '#9ca3af',     // Gray for neutral
+    attackZone: 'rgba(239, 68, 68, 0.2)',
+    defenseZone: 'rgba(59, 130, 246, 0.2)',
+    neutralZone: 'rgba(156, 163, 175, 0.2)',
+};
+
 /**
- * Renders SVG overlays (bounding boxes, arrows, lines) on top of the video frame
+ * Renders SVG overlays (lines, paths, zones) on top of the video frame
  * Uses normalized 0-100 coordinate system, scaled to container dimensions
+ * 
+ * Simplified to focus on:
+ * - Attack lines (offensive movement, passes)
+ * - Defense lines (defensive positioning, coverage)
+ * - Movement paths (player movement trajectories)
+ * - Zones (highlighted areas)
+ * - Annotations (text labels)
  */
 export const VideoOverlay: React.FC<VideoOverlayProps> = ({
     specs,
@@ -21,6 +38,14 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
     // Scale normalized coordinates (0-100) to pixel values
     const scaleX = (x: number) => (x / 100) * containerWidth;
     const scaleY = (y: number) => (y / 100) * containerHeight;
+
+    const getStrokeDasharray = (style?: 'solid' | 'dashed' | 'dotted'): string | undefined => {
+        switch (style) {
+            case 'dashed': return '10,5';
+            case 'dotted': return '3,3';
+            default: return undefined;
+        }
+    };
 
     return (
         <svg
@@ -34,179 +59,154 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
             }}
         >
             <defs>
-                {/* Arrow marker for movement arrows */}
+                {/* Arrow marker for attack lines */}
                 <marker
-                    id="arrowhead"
+                    id="arrowhead-attack"
                     markerWidth="10"
                     markerHeight="7"
                     refX="9"
                     refY="3.5"
                     orient="auto"
                 >
-                    <polygon points="0 0, 10 3.5, 0 7" fill="#22c55e" />
+                    <polygon points="0 0, 10 3.5, 0 7" fill={COLORS.attack} />
                 </marker>
+                {/* Arrow marker for defense lines */}
                 <marker
-                    id="arrowhead-blue"
+                    id="arrowhead-defense"
                     markerWidth="10"
                     markerHeight="7"
                     refX="9"
                     refY="3.5"
                     orient="auto"
                 >
-                    <polygon points="0 0, 10 3.5, 0 7" fill="#3b82f6" />
+                    <polygon points="0 0, 10 3.5, 0 7" fill={COLORS.defense} />
+                </marker>
+                {/* Arrow marker for neutral paths */}
+                <marker
+                    id="arrowhead-neutral"
+                    markerWidth="10"
+                    markerHeight="7"
+                    refX="9"
+                    refY="3.5"
+                    orient="auto"
+                >
+                    <polygon points="0 0, 10 3.5, 0 7" fill={COLORS.neutral} />
                 </marker>
             </defs>
 
             {specs.map((spec, specIndex) => (
                 <g key={specIndex}>
-                    {/* Bounding Boxes (tracking_overlay) */}
-                    {spec.type === 'tracking_overlay' &&
-                        spec.boundingBoxes.map((box, i) => (
-                            <BoundingBox
-                                key={`box-${i}`}
-                                box={box}
-                                scaleX={scaleX}
-                                scaleY={scaleY}
-                            />
-                        ))}
-
-                    {/* Court diagram players and arrows */}
-                    {(spec.type === 'court_diagram' || spec.type === 'spacing_analysis') && (
+                    {spec.type === 'play_diagram' && (
                         <>
-                            {/* Player markers as circles */}
-                            {spec.players?.map((player, i) => (
-                                <g key={`player-${i}`}>
-                                    <circle
-                                        cx={scaleX(player.position.x)}
-                                        cy={scaleY(player.position.y)}
-                                        r={16}
-                                        fill={
-                                            player.team === 'offense'
-                                                ? '#ef4444'
-                                                : player.team === 'defense'
-                                                    ? '#3b82f6'
-                                                    : '#6b7280'
-                                        }
-                                        stroke="white"
-                                        strokeWidth={2}
-                                        style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' }}
-                                    />
-                                    {player.jerseyNumber && (
-                                        <text
-                                            x={scaleX(player.position.x)}
-                                            y={scaleY(player.position.y) + 4}
-                                            textAnchor="middle"
-                                            fontSize={12}
-                                            fontWeight="bold"
-                                            fill="white"
-                                        >
-                                            {player.jerseyNumber}
-                                        </text>
-                                    )}
-                                    {player.hasBall && (
-                                        <circle
-                                            cx={scaleX(player.position.x) + 12}
-                                            cy={scaleY(player.position.y) - 12}
-                                            r={6}
-                                            fill="#f97316"
-                                            stroke="white"
-                                            strokeWidth={1}
-                                        />
-                                    )}
-                                </g>
+                            {/* Zones (render first so they appear behind lines) */}
+                            {spec.zones?.map((zone, i) => (
+                                <ZonePolygon
+                                    key={`zone-${i}`}
+                                    zone={zone}
+                                    scaleX={scaleX}
+                                    scaleY={scaleY}
+                                />
                             ))}
 
-                            {/* Movement arrows */}
-                            {spec.type === 'court_diagram' &&
-                                spec.arrows?.map((arrow, i) => (
-                                    <g key={`arrow-${i}`}>
-                                        <line
-                                            x1={scaleX(arrow.from.x)}
-                                            y1={scaleY(arrow.from.y)}
-                                            x2={scaleX(arrow.to.x)}
-                                            y2={scaleY(arrow.to.y)}
-                                            stroke={arrow.color || '#22c55e'}
+                            {/* Attack Lines (red) */}
+                            {spec.attackLines?.map((line, i) => (
+                                <LineWithArrow
+                                    key={`attack-${i}`}
+                                    from={line.from}
+                                    to={line.to}
+                                    label={line.label}
+                                    color={COLORS.attack}
+                                    strokeDasharray={getStrokeDasharray(line.style)}
+                                    arrowId="arrowhead-attack"
+                                    scaleX={scaleX}
+                                    scaleY={scaleY}
+                                />
+                            ))}
+
+                            {/* Defense Lines (blue) */}
+                            {spec.defenseLines?.map((line, i) => (
+                                <LineWithArrow
+                                    key={`defense-${i}`}
+                                    from={line.from}
+                                    to={line.to}
+                                    label={line.label}
+                                    color={COLORS.defense}
+                                    strokeDasharray={getStrokeDasharray(line.style)}
+                                    arrowId="arrowhead-defense"
+                                    scaleX={scaleX}
+                                    scaleY={scaleY}
+                                />
+                            ))}
+
+                            {/* Movement Paths */}
+                            {spec.movementPaths?.map((path, i) => {
+                                if (path.points.length < 2) return null;
+                                const color = path.type === 'attack' ? COLORS.attack :
+                                    path.type === 'defense' ? COLORS.defense : COLORS.neutral;
+                                const arrowId = `arrowhead-${path.type}`;
+                                const pathData = path.points
+                                    .map((p, idx) =>
+                                        idx === 0
+                                            ? `M ${scaleX(p.x)} ${scaleY(p.y)}`
+                                            : `L ${scaleX(p.x)} ${scaleY(p.y)}`
+                                    )
+                                    .join(' ');
+
+                                return (
+                                    <g key={`path-${i}`}>
+                                        <path
+                                            d={pathData}
+                                            fill="none"
+                                            stroke={color}
                                             strokeWidth={3}
-                                            strokeDasharray={arrow.dashed ? '8,4' : undefined}
-                                            markerEnd="url(#arrowhead)"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeDasharray={getStrokeDasharray(path.style)}
+                                            markerEnd={`url(#${arrowId})`}
+                                            opacity={0.9}
                                             style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}
                                         />
-                                        {arrow.label && (
+                                        {path.label && (
                                             <text
-                                                x={(scaleX(arrow.from.x) + scaleX(arrow.to.x)) / 2}
-                                                y={(scaleY(arrow.from.y) + scaleY(arrow.to.y)) / 2 - 8}
+                                                x={scaleX(path.points[Math.floor(path.points.length / 2)].x)}
+                                                y={scaleY(path.points[Math.floor(path.points.length / 2)].y) - 8}
                                                 textAnchor="middle"
                                                 fontSize={11}
                                                 fill="white"
-                                                style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.8))' }}
+                                                style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))' }}
                                             >
-                                                {arrow.label}
+                                                {path.label}
                                             </text>
                                         )}
                                     </g>
-                                ))}
+                                );
+                            })}
 
-                            {/* Spacing lines */}
-                            {spec.type === 'spacing_analysis' &&
-                                spec.spacingMetrics?.map((metric, i) => (
-                                    <g key={`spacing-${i}`}>
-                                        <line
-                                            x1={scaleX(metric.from.x)}
-                                            y1={scaleY(metric.from.y)}
-                                            x2={scaleX(metric.to.x)}
-                                            y2={scaleY(metric.to.y)}
-                                            stroke={metric.isOptimal ? '#22c55e' : '#f59e0b'}
-                                            strokeWidth={2}
-                                            strokeDasharray="4,4"
-                                            opacity={0.7}
-                                        />
-                                        <text
-                                            x={(scaleX(metric.from.x) + scaleX(metric.to.x)) / 2}
-                                            y={(scaleY(metric.from.y) + scaleY(metric.to.y)) / 2 - 6}
-                                            textAnchor="middle"
-                                            fontSize={10}
-                                            fill="white"
-                                            style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.8))' }}
-                                        >
-                                            {metric.distance.toFixed(1)}ft
-                                        </text>
-                                    </g>
-                                ))}
+                            {/* Annotations */}
+                            {spec.annotations?.map((annotation, i) => (
+                                <g key={`annotation-${i}`}>
+                                    <rect
+                                        x={scaleX(annotation.position.x) - 4}
+                                        y={scaleY(annotation.position.y) - 14}
+                                        width={annotation.text.length * 7 + 8}
+                                        height={18}
+                                        fill="rgba(0,0,0,0.7)"
+                                        rx={4}
+                                    />
+                                    <text
+                                        x={scaleX(annotation.position.x)}
+                                        y={scaleY(annotation.position.y)}
+                                        textAnchor="start"
+                                        fontSize={12}
+                                        fill="white"
+                                        fontWeight="500"
+                                    >
+                                        {annotation.text}
+                                    </text>
+                                </g>
+                            ))}
                         </>
                     )}
-
-                    {/* Trajectory paths */}
-                    {spec.type === 'trajectory' &&
-                        spec.trajectories?.map((traj, i) => {
-                            if (traj.points.length < 2) return null;
-                            const pathData = traj.points
-                                .map((p, idx) =>
-                                    idx === 0
-                                        ? `M ${scaleX(p.x)} ${scaleY(p.y)}`
-                                        : `L ${scaleX(p.x)} ${scaleY(p.y)}`
-                                )
-                                .join(' ');
-
-                            return (
-                                <path
-                                    key={`traj-${i}`}
-                                    d={pathData}
-                                    fill="none"
-                                    stroke={
-                                        traj.team === 'offense'
-                                            ? '#ef4444'
-                                            : traj.team === 'defense'
-                                                ? '#3b82f6'
-                                                : '#9ca3af'
-                                    }
-                                    strokeWidth={3}
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    opacity={0.8}
-                                    style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}
-                                />
-                            );
-                        })}
                 </g>
             ))}
         </svg>
@@ -214,64 +214,92 @@ export const VideoOverlay: React.FC<VideoOverlayProps> = ({
 };
 
 /**
- * Individual bounding box component
+ * Line with arrow component
  */
-const BoundingBox: React.FC<{
-    box: BoundingBoxType;
+const LineWithArrow: React.FC<{
+    from: Position;
+    to: Position;
+    label?: string;
+    color: string;
+    strokeDasharray?: string;
+    arrowId: string;
     scaleX: (v: number) => number;
     scaleY: (v: number) => number;
-}> = ({ box, scaleX, scaleY }) => {
-    const x = scaleX(box.x);
-    const y = scaleY(box.y);
-    const width = scaleX(box.width);
-    const height = scaleY(box.height);
+}> = ({ from, to, label, color, strokeDasharray, arrowId, scaleX, scaleY }) => {
+    return (
+        <g>
+            <line
+                x1={scaleX(from.x)}
+                y1={scaleY(from.y)}
+                x2={scaleX(to.x)}
+                y2={scaleY(to.y)}
+                stroke={color}
+                strokeWidth={3}
+                strokeDasharray={strokeDasharray}
+                markerEnd={`url(#${arrowId})`}
+                style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}
+            />
+            {label && (
+                <text
+                    x={(scaleX(from.x) + scaleX(to.x)) / 2}
+                    y={(scaleY(from.y) + scaleY(to.y)) / 2 - 8}
+                    textAnchor="middle"
+                    fontSize={11}
+                    fill="white"
+                    fontWeight="500"
+                    style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))' }}
+                >
+                    {label}
+                </text>
+            )}
+        </g>
+    );
+};
 
-    const color =
-        box.team === 'home' ? '#ef4444' : box.team === 'away' ? '#3b82f6' : '#22c55e';
+/**
+ * Zone polygon component
+ */
+const ZonePolygon: React.FC<{
+    zone: ZoneRegion;
+    scaleX: (v: number) => number;
+    scaleY: (v: number) => number;
+}> = ({ zone, scaleX, scaleY }) => {
+    if (zone.points.length < 3) return null;
+
+    const fillColor = zone.type === 'attack' ? COLORS.attackZone :
+        zone.type === 'defense' ? COLORS.defenseZone : COLORS.neutralZone;
+    const strokeColor = zone.type === 'attack' ? COLORS.attack :
+        zone.type === 'defense' ? COLORS.defense : COLORS.neutral;
+
+    const pointsStr = zone.points
+        .map(p => `${scaleX(p.x)},${scaleY(p.y)}`)
+        .join(' ');
+
+    // Calculate centroid for label
+    const centroidX = zone.points.reduce((sum, p) => sum + p.x, 0) / zone.points.length;
+    const centroidY = zone.points.reduce((sum, p) => sum + p.y, 0) / zone.points.length;
 
     return (
         <g>
-            <rect
-                x={x}
-                y={y}
-                width={width}
-                height={height}
-                fill="none"
-                stroke={color}
+            <polygon
+                points={pointsStr}
+                fill={fillColor}
+                stroke={strokeColor}
                 strokeWidth={2}
-                rx={4}
-                style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.5))' }}
+                strokeDasharray="5,5"
             />
-            {box.label && (
-                <g>
-                    <rect
-                        x={x}
-                        y={y - 20}
-                        width={box.label.length * 8 + 12}
-                        height={18}
-                        fill={color}
-                        rx={2}
-                    />
-                    <text
-                        x={x + 6}
-                        y={y - 6}
-                        fontSize={11}
-                        fontWeight="bold"
-                        fill="white"
-                    >
-                        {box.label}
-                    </text>
-                </g>
-            )}
-            {box.confidence !== undefined && (
+            {zone.label && (
                 <text
-                    x={x + width - 4}
-                    y={y - 6}
-                    textAnchor="end"
-                    fontSize={9}
-                    fill={color}
+                    x={scaleX(centroidX)}
+                    y={scaleY(centroidY)}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fontSize={12}
+                    fill="white"
+                    fontWeight="bold"
+                    style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.9))' }}
                 >
-                    {(box.confidence * 100).toFixed(0)}%
+                    {zone.label}
                 </text>
             )}
         </g>

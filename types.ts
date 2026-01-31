@@ -27,101 +27,68 @@ export interface AnalysisState {
 }
 
 // ============================================
-// Remotion Visualization Types
+// Simplified Visualization Types
+// Focus on lines, paths, and arrows - not player identification
 // ============================================
 
-// Normalized court position (0-100 scale)
-export interface CourtPosition {
-  x: number;  // 0=left baseline, 100=right
-  y: number;  // 0=bottom sideline, 100=top
+// Normalized position (0-100 scale)
+export interface Position {
+  x: number;  // 0=left, 100=right
+  y: number;  // 0=top, 100=bottom
 }
 
-export interface PlayerMarker {
+// Attack line - shows offensive movement or ball path
+export interface AttackLine {
   id: string;
-  position: CourtPosition;
-  team: 'offense' | 'defense' | 'neutral';
-  jerseyNumber?: number;
-  label?: string;
-  hasBall?: boolean;
+  from: Position;
+  to: Position;
+  label?: string;  // e.g., "Pass", "Drive", "Cut"
+  style?: 'solid' | 'dashed' | 'dotted';
 }
 
-export interface MovementArrow {
+// Defense line - shows defensive positioning or coverage
+export interface DefenseLine {
   id: string;
-  from: CourtPosition;
-  to: CourtPosition;
-  color?: string;
-  dashed?: boolean;
-  label?: string;
+  from: Position;
+  to: Position;
+  label?: string;  // e.g., "Help", "Switch", "Close out"
+  style?: 'solid' | 'dashed' | 'dotted';
 }
 
-export interface CourtAnnotation {
+// Movement path - shows potential or historical movement
+export interface MovementPath {
   id: string;
-  position: CourtPosition;
+  points: Position[];  // Path of movement
+  type: 'attack' | 'defense' | 'neutral';
+  label?: string;  // e.g., "Player movement", "Predicted path"
+  style?: 'solid' | 'dashed' | 'dotted';
+}
+
+// Zone/Region - highlight an area of interest
+export interface ZoneRegion {
+  id: string;
+  points: Position[];  // Polygon points
+  label?: string;  // e.g., "Gap", "Open space", "Weak side"
+  type: 'attack' | 'defense' | 'neutral';
+}
+
+// Annotation - text label at a position
+export interface Annotation {
+  id: string;
+  position: Position;
   text: string;
-  color?: string;
 }
 
-export interface BoundingBox {
-  id: string;
-  x: number;      // 0-100 normalized
-  y: number;      // 0-100 normalized
-  width: number;  // 0-100 normalized
-  height: number; // 0-100 normalized
-  label?: string;
-  team?: 'home' | 'away' | 'neutral';
-  confidence?: number;
-}
-
-export interface PlayerTrajectory {
-  id: string;
-  playerId: string;
-  points: CourtPosition[];
-  team: 'offense' | 'defense' | 'neutral';
-  label?: string;
-}
-
-export interface SpacingMetric {
-  id: string;
-  from: CourtPosition;
-  to: CourtPosition;
-  distance: number; // in feet
-  label?: string;
-  isOptimal?: boolean;
-}
-
-// Visualization Specs
-export interface CourtDiagramSpec {
-  type: 'court_diagram';
+// Play Diagram - the main visualization spec
+export interface PlayDiagramSpec {
+  type: 'play_diagram';
   title?: string;
-  players: PlayerMarker[];
-  formationLabel?: string;
-  arrows?: MovementArrow[];
-  annotations?: CourtAnnotation[];
+  description?: string;
+  attackLines?: AttackLine[];
+  defenseLines?: DefenseLine[];
+  movementPaths?: MovementPath[];
+  zones?: ZoneRegion[];
+  annotations?: Annotation[];
 }
 
-export interface TrackingOverlaySpec {
-  type: 'tracking_overlay';
-  boundingBoxes: BoundingBox[];
-  teamColors?: { home: string; away: string };
-}
-
-export interface TrajectorySpec {
-  type: 'trajectory';
-  title?: string;
-  trajectories: PlayerTrajectory[];
-  animatePlayback?: boolean;
-}
-
-export interface SpacingAnalysisSpec {
-  type: 'spacing_analysis';
-  title?: string;
-  players: PlayerMarker[];
-  spacingMetrics?: SpacingMetric[];
-  spacingGrade?: 'A' | 'B' | 'C' | 'D' | 'F';
-}
-
-export type VisualizationSpec =
-  | CourtDiagramSpec
-  | TrackingOverlaySpec
-  | TrajectorySpec
-  | SpacingAnalysisSpec;
+export type VisualizationSpec = PlayDiagramSpec;
