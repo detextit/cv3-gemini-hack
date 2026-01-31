@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import UploadZone from './components/UploadZone';
 import AnalysisView from './components/AnalysisView';
 import { MediaAsset, MediaType, AgentEvent } from './types';
@@ -12,11 +12,28 @@ const App: React.FC = () => {
 
   const handleUpload = (asset: MediaAsset) => {
     setMedia(asset);
+    window.history.pushState({ view: 'analysis' }, '');
   };
+
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      // If we go back and there's no state or it's not analysis, close the view
+      if (!event.state?.view) {
+        setMedia(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const handleClose = () => {
     if (confirm("End current analysis session?")) {
-      setMedia(null);
+      // Go back in history if we have state, otherwise just reset
+      if (window.history.state?.view === 'analysis') {
+        window.history.back();
+      } else {
+        setMedia(null);
+      }
     }
   };
 
@@ -52,6 +69,11 @@ const App: React.FC = () => {
         callback
       );
 
+      // Attach the timestamp of the analyzed frame
+      if (media.type === MediaType.VIDEO && videoRef.current) {
+        return { ...result, timestamp: videoRef.current.currentTime };
+      }
+
       return result;
     } catch (error) {
       console.error(error);
@@ -64,7 +86,7 @@ const App: React.FC = () => {
 
       {/* Header - only show on upload screen */}
       {!media && (
-        <header className="h-14 border-b border-slate-800 px-6 flex items-center shrink-0">
+        <header className="h-16 border-b border-slate-800 px-6 flex items-center shrink-0">
           <h1 className="text-lg font-semibold tracking-tight">detextit</h1>
         </header>
       )}

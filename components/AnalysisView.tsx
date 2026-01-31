@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { MediaAsset, MediaType, VisualizationSpec, PlayDiagramSpec, AgentEvent, ThinkingStep, OverlayData } from '../types';
-import { Loader2, Scan, Command, FileText } from 'lucide-react';
+import { Loader2, Scan, Command, FileText, ArrowLeft } from 'lucide-react';
 import { VideoOverlay } from './VideoOverlay';
 import {
   Drawer,
@@ -15,6 +15,7 @@ import {
 interface AnalysisResult {
   text: string;
   visualizations?: VisualizationSpec[];
+  timestamp?: number;
 }
 
 interface AnalysisViewProps {
@@ -43,6 +44,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
   const mediaWrapperRef = useRef<HTMLDivElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
 
   // Agentic state - accumulated overlay and thinking steps
   const [accumulatedOverlay, setAccumulatedOverlay] = useState<PlayDiagramSpec>({
@@ -55,7 +57,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
     annotations: [],
   });
   const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
-  const [currentStage, setCurrentStage] = useState<string | null>(null);
 
   // Update overlay dimensions when media element changes
   useEffect(() => {
@@ -129,36 +130,12 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
         setAccumulatedOverlay(prev => mergeOverlayIntoSpec(prev, args.overlay));
       }
 
-      // Update current stage
-      if (args.stage) {
-        setCurrentStage(args.stage);
+      // Append thinking step to progress list (if thinking provided)
+      if (args.thinking) {
+        setThinkingSteps(prev => [...prev, { thinking: args.thinking! }].slice(-20));
       }
-
-      // Append thinking step to progress list
-      setThinkingSteps(prev => {
-        const next = [
-          ...prev,
-          {
-            id: args.id,
-            thinking: args.thinking,
-            stage: args.stage,
-          }
-        ].slice(-20);
-        return next;
-      });
     }
   }, []);
-
-  const getStageTitle = (stage: string | null): string => {
-    switch (stage) {
-      case 'diagram': return 'Diagramming play';
-      case 'think': return 'Analyzing';
-      case 'finalize': return 'Finalizing';
-      default: return 'Processing';
-    }
-  };
-
-
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
@@ -174,7 +151,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
       annotations: [],
     });
     setThinkingSteps([]);
-    setCurrentStage(null);
 
     try {
       const result = await onAnalyze(handleAgentEvent);
@@ -184,7 +160,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
       setAnalysis({ text: 'Analysis failed. Please try again.' });
     } finally {
       setIsAnalyzing(false);
-      setCurrentStage(null);
     }
   };
 
@@ -221,15 +196,19 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
   return (
     <div className="flex h-full flex-col overflow-hidden animate-in fade-in duration-300">
       {/* Header with centered branding */}
-      <div className="h-10 px-4 flex items-center justify-center border-b border-slate-800/50 bg-slate-950/80 backdrop-blur-sm shrink-0 relative">
-        <h1 className="text-sm font-semibold tracking-tight text-slate-200">detextit</h1>
+      <div className="h-16 px-6 flex items-center justify-between border-b border-slate-800/50 bg-slate-950/80 backdrop-blur-sm shrink-0 relative">
         <button
           onClick={onClose}
-          className="absolute right-4 text-xs text-slate-500 hover:text-slate-300 transition-colors"
-          title="Close (Esc)"
+          className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+          title="Back to Upload"
         >
-          Close
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back</span>
         </button>
+
+        <h1 className="text-base font-semibold tracking-tight text-slate-200 absolute left-1/2 -translate-x-1/2">detextit</h1>
+
+        <div className="w-8" /> {/* Spacer for centering */}
       </div>
 
       {/* Full-height video area - using all available space */}
@@ -247,6 +226,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
               muted
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
+              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
             />
           ) : (
             <img
@@ -293,7 +273,12 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
 
           {/* Show final overlay after analysis completes */}
           {!isAnalyzing && analysis?.visualizations && overlayDimensions.width > 0 && (
-            <div className={`absolute inset-0 pointer-events-none transition-opacity duration-1000 ${isPlaying ? 'opacity-0' : 'opacity-100'}`}>
+            <div
+              className={`absolute inset-0 pointer-events-none transition-opacity duration-300
+                ${(!isPlaying && (!analysis.timestamp || Math.abs(currentTime - analysis.timestamp) < 0.5))
+                  ? 'opacity-100'
+                  : 'opacity-0'}`}
+            >
               <VideoOverlay
                 specs={analysis.visualizations}
                 containerWidth={overlayDimensions.width}
@@ -306,9 +291,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
           {isAnalyzing && hasOverlayElements && (
             <div className="absolute top-3 left-3 flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/60 bg-slate-950/90 shadow-lg shadow-black/40 animate-in fade-in slide-in-from-top-2 duration-300">
               <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
-              <span className="text-sm font-medium text-slate-100">
-                {getStageTitle(currentStage)}
-              </span>
+              <span className="text-sm font-medium text-slate-100">Analyzing</span>
             </div>
           )}
         </div>
@@ -348,8 +331,8 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
       </div>
 
       {/* Footer Info - Minimal */}
-      <div className="h-8 px-4 flex items-center justify-between border-t border-slate-900 bg-slate-950 shrink-0 text-[10px] text-slate-600">
-        <div>© detextit</div>
+      <div className="h-12 px-6 flex items-center justify-between border-t border-slate-900 bg-slate-950 shrink-0 text-xs text-slate-600">
+        <div>© detextit 2026</div>
         <div>{(media.file.size / (1024 * 1024)).toFixed(1)} MB</div>
       </div>
 
