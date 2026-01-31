@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { MediaAsset, MediaType, VisualizationSpec, PlayDiagramSpec, AgentEvent, ThinkingStep, OverlayData } from '../types';
 import { Loader2 } from 'lucide-react';
 import { VideoOverlay } from './VideoOverlay';
-import ReactMarkdown from 'react-markdown';
+import { toast } from 'sonner';
 
 interface AnalysisResult {
   text: string;
@@ -33,6 +33,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [overlayDimensions, setOverlayDimensions] = useState({ width: 0, height: 0 });
   const mediaContainerRef = useRef<HTMLDivElement>(null);
+  const toastIdRef = useRef<number | string | null>(null);
 
   // Agentic state - accumulated overlay and thinking steps
   const [accumulatedOverlay, setAccumulatedOverlay] = useState<PlayDiagramSpec>({
@@ -94,16 +95,72 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
       }
 
       // Append thinking step to progress list
-      setThinkingSteps(prev => [
-        ...prev,
-        {
-          id: args.id,
-          thinking: args.thinking,
-          stage: args.stage,
-        }
-      ]);
+      setThinkingSteps(prev => {
+        const next = [
+          ...prev,
+          {
+            id: args.id,
+            thinking: args.thinking,
+            stage: args.stage,
+          }
+        ].slice(-20);
+        return next;
+      });
     }
   }, []);
+
+  const getStageTitle = (stage: string | null): string => {
+    switch (stage) {
+      case 'capture': return 'Capturing frame';
+      case 'think': return 'Thinking';
+      case 'diagram': return 'Diagramming';
+      case 'finalize': return 'Finalizing';
+      default: return 'Analyzing';
+    }
+  };
+
+  const buildProgressLines = (stage: string | null, steps: ThinkingStep[]): string[] => {
+    const stageLine = `Stage: ${getStageTitle(stage)}`;
+    const stepLines = steps.slice(-4).map(step => step.thinking);
+    if (stepLines.length === 0) {
+      return [stageLine, 'Processing...'];
+    }
+    return [stageLine, ...stepLines].slice(0, 5);
+  };
+
+  const summarizeToLines = (text: string, maxLines: number): string[] => {
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    if (!normalized) return ['No summary available.'];
+    const sentences = normalized.match(/[^.!?]+[.!?]+|[^.!?]+$/g);
+    const lines = (sentences ?? [normalized]).map(line => line.trim());
+    return lines.slice(0, maxLines);
+  };
+
+  const showThinkingToast = useCallback((title: string, lines: string[], duration: number) => {
+    const id = toast.custom(
+      (toastId) => (
+        <div className="max-w-[320px] rounded-lg border border-slate-700/70 bg-slate-950/95 px-3 py-2 shadow-lg shadow-black/40">
+          <div className="text-[10px] uppercase tracking-wide text-slate-400">{title}</div>
+          <div className="mt-1 space-y-1">
+            {lines.map((line, index) => (
+              <p key={`${toastId}-${index}`} className="text-xs leading-snug text-slate-100">
+                {line}
+              </p>
+            ))}
+          </div>
+        </div>
+      ),
+      { id: toastIdRef.current ?? undefined, duration }
+    );
+    toastIdRef.current = id;
+  }, []);
+
+  useEffect(() => {
+    if (isAnalyzing) {
+      const lines = buildProgressLines(currentStage, thinkingSteps);
+      showThinkingToast('Analysis', lines, Infinity);
+    }
+  }, [currentStage, thinkingSteps, isAnalyzing, showThinkingToast]);
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
@@ -122,25 +179,21 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
     setCurrentStage(null);
 
     try {
+      showThinkingToast('Analysis', ['Stage: Preparing', 'Starting analysis...'], Infinity);
       const result = await onAnalyze(handleAgentEvent);
       setAnalysis(result);
+      if (result?.text) {
+        showThinkingToast('Analysis complete', summarizeToLines(result.text, 5), 6000);
+      } else {
+        showThinkingToast('Analysis complete', ['No summary returned.'], 4000);
+      }
     } catch (error) {
       console.error('Analysis failed:', error);
       setAnalysis({ text: 'Analysis failed. Please try again.' });
+      showThinkingToast('Analysis failed', ['Please try again.'], 4000);
     } finally {
       setIsAnalyzing(false);
       setCurrentStage(null);
-    }
-  };
-
-  // Get human-readable stage title
-  const getStageTitle = (stage: string | null): string => {
-    switch (stage) {
-      case 'capture': return 'Capturing frame';
-      case 'think': return 'Thinking';
-      case 'diagram': return 'Diagramming';
-      case 'finalize': return 'Finalizing';
-      default: return 'Analyzing';
     }
   };
 
@@ -154,19 +207,28 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
   const statusLabel = isAnalyzing ? 'Analyzing' : analysis ? 'Ready' : 'Idle';
 
   return (
-    <div className="flex h-full flex-col md:flex-row overflow-hidden animate-in fade-in duration-300">
-      <div className="flex-1 flex flex-col border-b md:border-b-0 md:border-r border-slate-800">
+    <div className="flex h-full flex-col overflow-hidden animate-in fade-in duration-300">
+      <div className="flex-1 flex flex-col border-b border-slate-800">
         <div className="px-4 py-3 flex items-center justify-between border-b border-slate-800">
           <div className="min-w-0">
             <p className="text-sm text-slate-200 truncate">{media.file.name}</p>
             <p className="text-xs text-slate-400">{statusLabel}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            Close
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAnalyze}
+              disabled={isAnalyzing}
+              className="px-3 py-1.5 text-xs font-medium rounded-md bg-slate-100 text-slate-900 hover:bg-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {analysis ? 'Analyze again' : 'Analyze'}
+            </button>
+            <button
+              onClick={onClose}
+              className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              Close
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 flex items-center justify-center p-4 bg-black/20">
@@ -222,90 +284,6 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
         <div className="px-4 py-3 text-xs text-slate-400 flex items-center gap-4 border-t border-slate-800">
           <span>Type: {media.type}</span>
           <span>Size: {(media.file.size / (1024 * 1024)).toFixed(2)} MB</span>
-        </div>
-      </div>
-
-      <div className="w-full md:w-96 flex flex-col bg-slate-950">
-        <div className="px-4 py-3 border-b border-slate-800">
-          <h2 className="text-sm font-semibold text-slate-100">Analysis</h2>
-          <p className="text-xs text-slate-400">Analyze the current frame.</p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4">
-          {!analysis && !isAnalyzing && (
-            <div className="h-full flex flex-col items-center justify-center text-center">
-              <h3 className="text-slate-100 font-medium mb-2">Ready</h3>
-              <p className="text-slate-400 text-sm mb-6 max-w-[280px]">
-                Click analyze to generate a summary of the current frame.
-              </p>
-              <button
-                onClick={handleAnalyze}
-                className="px-4 py-2 bg-slate-100 text-slate-900 text-sm font-medium rounded-md hover:bg-white transition-colors"
-              >
-                Analyze
-              </button>
-            </div>
-          )}
-
-          {isAnalyzing && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 text-slate-300 animate-spin" />
-                <h3 className="text-slate-100 font-medium">Analyzing...</h3>
-              </div>
-
-              {/* Thinking steps progress */}
-              {thinkingSteps.length > 0 && (
-                <div className="space-y-2">
-                  {thinkingSteps.map((step, index) => (
-                    <div
-                      key={step.id}
-                      className="flex items-start gap-2 text-sm animate-in fade-in slide-in-from-left-2 duration-200"
-                      style={{ animationDelay: `${index * 50}ms` }}
-                    >
-                      <div className={`w-2 h-2 mt-1.5 rounded-full shrink-0 ${
-                        step.stage === 'capture' ? 'bg-yellow-400' :
-                        step.stage === 'think' ? 'bg-blue-400' :
-                        step.stage === 'diagram' ? 'bg-green-400' :
-                        step.stage === 'finalize' ? 'bg-purple-400' :
-                        'bg-slate-400'
-                      }`} />
-                      <p className="text-slate-300">{step.thinking}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {thinkingSteps.length === 0 && (
-                <p className="text-slate-400 text-sm">Processing image...</p>
-              )}
-            </div>
-          )}
-
-          {analysis && !isAnalyzing && (
-            <div className="space-y-4">
-              <div className="prose prose-invert prose-sm max-w-none prose-p:my-2 prose-headings:text-slate-200 prose-strong:text-slate-100 prose-code:bg-slate-900 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-ul:my-2 prose-li:my-0">
-                <ReactMarkdown>{analysis.text}</ReactMarkdown>
-              </div>
-
-              <div className="pt-4 border-t border-slate-800 space-y-2">
-                {analysis.visualizations && analysis.visualizations.length > 0 && (
-                  <button
-                    onClick={() => setAnalysis({ ...analysis, visualizations: undefined })}
-                    className="w-full px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 text-sm font-medium rounded-md transition-colors"
-                  >
-                    Clear overlays
-                  </button>
-                )}
-                <button
-                  onClick={handleAnalyze}
-                  className="w-full px-4 py-2 bg-slate-100 hover:bg-white text-slate-900 text-sm font-medium rounded-md transition-colors"
-                >
-                  Analyze again
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

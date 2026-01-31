@@ -371,8 +371,33 @@ function mergeOverlayData(accumulated: PlayDiagramSpec, newData: OverlayData): P
 }
 
 /**
+ * Generate deterministic initial overlays to show immediately
+ * These provide instant visual feedback while waiting for the model
+ */
+function generateInitialOverlays(callback: AgentCallback): void {
+  // Scanning overlay - shows the analysis has started
+  const scanningOverlay: ShowOverlayArgs = {
+    id: 'initial-scan',
+    overlay: {
+      annotations: [
+        { id: 'scan-label', position: { x: 50, y: 5 }, text: '🔍 Scanning frame...' }
+      ]
+    },
+    thinking: 'Initializing visual analysis...',
+    stage: 'capture'
+  };
+
+  callback({
+    type: 'tool_call',
+    toolName: 'show_overlay',
+    args: scanningOverlay
+  });
+}
+
+/**
  * Agentic analysis with tool calling loop
  * Model emits show_overlay tool calls one at a time, enabling real-time UI updates
+ * Uses prefill to speed up first response and enforces minimum iterations
  */
 export const analyzeMediaAgentic = async (
   payload: AnalysisPayload,
@@ -380,7 +405,11 @@ export const analyzeMediaAgentic = async (
   callback: AgentCallback
 ): Promise<AnalysisResult> => {
   const MAX_ITERATIONS = 10;
+  const MIN_ITERATIONS = 5;  // Minimum tool calls before completion
   const modelName = 'gemini-3-flash-preview';
+
+  // Send deterministic initial overlays immediately for faster perceived response
+  generateInitialOverlays(callback);
 
   // Accumulated visualization from all tool calls
   let accumulatedSpec: PlayDiagramSpec = {
@@ -412,14 +441,22 @@ export const analyzeMediaAgentic = async (
     parts: initialParts
   });
 
+  // Note: We cannot use prefill with functionCall for Gemini 3 models because
+  // they require a thought_signature that only the model can generate.
+  // Instead, we use generateInitialOverlays() above for instant UI feedback.
+
+  // Track tool call count for minimum iterations
+  let toolCallCount = 0;
+
   try {
     log('=== STARTING AGENT LOOP ===');
     log('Prompt:', prompt);
     log('Image MIME type:', payload.mimeType);
     log('Image base64 length:', payload.base64.length);
+    log('MIN_ITERATIONS:', MIN_ITERATIONS);
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-      log(`\n--- ITERATION ${iteration + 1}/${MAX_ITERATIONS} ---`);
+      log(`\n--- ITERATION ${iteration + 1}/${MAX_ITERATIONS} (tool calls: ${toolCallCount}) ---`);
       log('Contents count:', contents.length);
 
       const response: GenerateContentResponse = await ai.models.generateContent({
@@ -470,6 +507,7 @@ export const analyzeMediaAgentic = async (
       if (functionCall?.functionCall) {
         const { name, args } = functionCall.functionCall;
         log('Function call detected:', { name, args });
+        toolCallCount++;
 
         if (name === 'show_overlay' && args) {
           const showOverlayArgs = args as unknown as ShowOverlayArgs;
@@ -501,6 +539,12 @@ export const analyzeMediaAgentic = async (
             });
           }, 0);
 
+          // Determine response message based on progress toward minimum iterations
+          const remainingCalls = MIN_ITERATIONS - toolCallCount;
+          const progressMessage = remainingCalls > 0
+            ? `Overlay "${showOverlayArgs.id}" displayed. You MUST make at least ${remainingCalls} more tool calls before providing final summary.`
+            : `Overlay "${showOverlayArgs.id}" displayed successfully. Continue with next step or provide final summary.`;
+
           // Add function response to continue the loop
           const functionResponse = {
             role: 'user' as const,
@@ -509,14 +553,26 @@ export const analyzeMediaAgentic = async (
                 name: 'show_overlay',
                 response: {
                   success: true,
-                  message: `Overlay "${showOverlayArgs.id}" displayed successfully. Continue with next step or provide final summary.`
+                  message: progressMessage
                 }
               }
             }]
           };
           log('Adding function response:', functionResponse);
+          log('Tool call count:', { current: toolCallCount, min: MIN_ITERATIONS });
           contents.push(functionResponse);
         }
+      } else if (toolCallCount < MIN_ITERATIONS) {
+        // Model tried to complete before minimum iterations - force it to continue
+        log('Model tried to complete early, forcing continuation. Tool calls:', toolCallCount);
+
+        const forceMessage = `You have only made ${toolCallCount} tool calls. You MUST use the show_overlay tool at least ${MIN_ITERATIONS - toolCallCount} more times before providing your final summary. Continue with stage="think" or stage="diagram" to add more analysis elements.`;
+
+        contents.push({
+          role: 'user',
+          parts: [{ text: forceMessage }]
+        });
+        // Don't break - continue the loop
       } else {
         // No function call - model is done, extract final text
         log('No function call in response - model finished');
