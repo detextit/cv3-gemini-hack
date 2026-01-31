@@ -1,0 +1,5 @@
+{
+  "name": "PlayBook AI",
+  "description": "An elite sports analysis agent powered by Gemini Agentic Vision. Upload game footage or playbook images to analyze strategies, formations, and player movements using advanced computer vision and code execution.",
+  "requestFramePermissions": []
+}
