@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Upload, Video, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { Upload, Loader2 } from 'lucide-react';
 import { MediaAsset } from '../types';
 import { fileToBase64, getMediaType, getMimeType } from '../utils/fileHelpers';
 
@@ -41,52 +41,39 @@ const UploadZone: React.FC<UploadZoneProps> = ({ onUpload, isProcessing }) => {
   const isLoading = isProcessing || isReading;
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center p-8 border-2 border-dashed border-slate-700 rounded-2xl bg-slate-800/50 hover:bg-slate-800/80 transition-all duration-300 group">
-      <div className="relative w-24 h-24 mb-6 flex items-center justify-center bg-blue-500/10 rounded-full group-hover:scale-110 transition-transform duration-300">
+    <div className="w-full flex flex-col items-center justify-center p-8 border border-dashed border-slate-700 rounded-lg bg-slate-900/40">
+      <div className="mb-4 flex items-center justify-center">
         {isLoading ? (
-            <Loader2 className="w-10 h-10 text-blue-400 animate-spin" />
+          <Loader2 className="w-8 h-8 text-slate-300 animate-spin" />
         ) : (
-            <Upload className="w-10 h-10 text-blue-400" />
+          <Upload className="w-8 h-8 text-slate-300" />
         )}
-        <div className={`absolute inset-0 rounded-full border border-blue-500/30 ${isLoading ? 'animate-spin' : 'animate-pulse'}`}></div>
       </div>
-      
-      <h3 className="text-2xl font-semibold text-white mb-2">
-        {isReading ? "Reading Media..." : "Upload Game Footage"}
+
+      <h3 className="text-lg font-medium text-slate-100">
+        {isReading ? 'Reading media...' : 'Upload a video or image'}
       </h3>
-      <p className="text-slate-400 mb-8 text-center max-w-md">
-        Drag and drop your video clip or image here, or click to browse.
-        <br/><span className="text-xs text-slate-500 mt-2 block">Supports MP4, MOV, JPG, PNG (Max 20MB)</span>
+      <p className="text-sm text-slate-400 mt-2 text-center">
+        Drag and drop or click to browse. MP4, MOV, JPG, PNG up to 20MB.
       </p>
 
-      <label className={`
-        relative overflow-hidden
-        px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg 
-        cursor-pointer transition-colors shadow-lg shadow-blue-500/20
-        ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}
-      `}>
-        <span className="relative z-10 flex items-center gap-2">
-            {isLoading ? 'Processing...' : 'Select File'}
-        </span>
-        <input 
-          type="file" 
-          className="hidden" 
+      <label
+        className={`
+          mt-6 inline-flex items-center justify-center
+          px-4 py-2 bg-slate-100 text-slate-900 text-sm font-medium rounded-md
+          cursor-pointer transition-colors hover:bg-white
+          ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}
+        `}
+      >
+        {isLoading ? 'Processing...' : 'Select file'}
+        <input
+          type="file"
+          className="hidden"
           accept="image/*,video/*"
           onChange={handleFileChange}
           disabled={isLoading}
         />
       </label>
-
-      <div className="mt-12 flex gap-8 text-slate-500">
-        <div className="flex flex-col items-center gap-2">
-            <Video className="w-6 h-6" />
-            <span className="text-xs">Game Clips</span>
-        </div>
-        <div className="flex flex-col items-center gap-2">
-            <ImageIcon className="w-6 h-6" />
-            <span className="text-xs">Formation Photos</span>
-        </div>
-      </div>
     </div>
   );
 };
