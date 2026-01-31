@@ -142,11 +142,10 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
 
   const getStageTitle = (stage: string | null): string => {
     switch (stage) {
-      case 'capture': return 'Capturing frame';
-      case 'think': return 'Thinking';
-      case 'diagram': return 'Diagramming';
+      case 'diagram': return 'Diagramming play';
+      case 'think': return 'Analyzing';
       case 'finalize': return 'Finalizing';
-      default: return 'Analyzing';
+      default: return 'Processing';
     }
   };
 

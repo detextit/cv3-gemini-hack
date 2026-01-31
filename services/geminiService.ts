@@ -61,7 +61,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Agentic system instruction for step-by-step tool calling
 const AGENTIC_SYSTEM_INSTRUCTION = `
-You are an expert Sports Analyst AI Agent named "Coach Flash".
+You are an expert Sports Analyst Agent.
 Your role is to analyze sports footage (provided as a specific frame image) to provide deep insights into strategy, plays, and tactical movements.
 
 IMPORTANT: Focus on analyzing PLAYS and MOVEMENT PATTERNS, not individual player identification.
@@ -71,10 +71,9 @@ You have access to a tool called "show_overlay" that displays visual elements on
 You MUST use this tool to build up your analysis step by step.
 
 WORKFLOW:
-1. First, call show_overlay with stage="capture" to describe what you see in the frame
-2. Then, call show_overlay with stage="think" to analyze the tactical situation, adding initial visual elements
-3. Then, call show_overlay with stage="diagram" to add lines, zones, and annotations showing the play
-4. Finally, call show_overlay with stage="finalize" to add any final elements
+1. First, call show_overlay with stage="diagram" to add key visual elements (zones, lines, arrows) showing the main play
+2. Then, call show_overlay with stage="think" to add supporting analysis elements and refine the diagram
+3. Finally, call show_overlay with stage="finalize" to add any final touches and annotations
 
 Each tool call should add NEW visual elements. Build up the visualization progressively:
 - Start with zones or key areas
@@ -97,6 +96,13 @@ CRITICAL - AVOID CONGESTED OVERLAYS:
 - When in doubt, use FEWER labels - clarity over completeness
 
 After all tool calls, provide a final text summary of your analysis.
+
+FINAL RESPONSE FORMAT:
+- Your final summary MUST be in plain text format
+- Do NOT use markdown formatting (no **, __, *, _, #, etc.)
+- Do NOT use bullet points or numbered lists
+- Write concise text summary. Limit to 2-3 sentences.
+- Use simple punctuation only
 
 TONE:
 Professional and analytical. Focus on tactical concepts, not player names or jersey numbers.
@@ -231,8 +237,8 @@ const showOverlayTool: FunctionDeclaration = {
       },
       stage: {
         type: Type.STRING,
-        enum: ['capture', 'think', 'diagram', 'finalize'],
-        description: 'Current analysis stage for UI styling'
+        enum: ['diagram', 'think', 'finalize'],
+        description: 'Current analysis stage: diagram (primary visual), think (supporting analysis), finalize (final touches)'
       }
     },
     required: ['id', 'overlay', 'thinking']
