@@ -314,60 +314,43 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
         </div>
       </div>
 
-      {/* Footer with Centered Analyze Button and Copyright */}
-      <div className="h-14 px-4 flex items-center justify-center border-t border-slate-800/50 bg-slate-950/80 backdrop-blur-sm shrink-0 relative">
-        {/* Copyright - absolute positioned left */}
-        <div className="absolute left-4 text-[10px] text-slate-600">
-          © detextit
-        </div>
-
-        {/* Centered Button Group */}
-        <div className="flex items-center gap-2">
-          {/* Analyze Button */}
-          <button
-            onClick={handleAnalyze}
-            disabled={isAnalyzing}
-            className="flex items-center gap-3 px-5 py-2 text-sm font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-900/30"
-          >
-            {isAnalyzing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Analyzing...</span>
-              </>
-            ) : (
-              <>
-                <Scan className="w-4 h-4" />
-                <span>{analysis ? 'Analyze Again' : 'Analyze Frame'}</span>
-                <span className="hidden sm:flex items-center gap-1 text-xs text-emerald-200/70 border-l border-emerald-500/50 pl-3">
-                  {isMac ? (
-                    <>
-                      <Command className="w-3 h-3" />
-                      <span>↵</span>
-                    </>
-                  ) : (
-                    <span>Ctrl+↵</span>
-                  )}
-                </span>
-              </>
-            )}
-          </button>
-
-          {/* View Analysis Button - only show when we have analysis */}
-          {analysis && (
-            <button
-              onClick={() => setDrawerOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all shadow-lg shadow-black/30"
-            >
-              <FileText className="w-4 h-4" />
-              <span>View Analysis</span>
-            </button>
+      {/* Action Bar - Prominent Row */}
+      <div className="px-4 py-4 flex items-center justify-center gap-4 bg-slate-950 border-t border-slate-900 shrink-0 z-10">
+        {/* Analyze Button */}
+        <button
+          onClick={handleAnalyze}
+          disabled={isAnalyzing}
+          className="flex items-center gap-2 px-8 py-3 text-base font-medium rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-900/20 active:scale-95"
+        >
+          {isAnalyzing ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Analyzing...</span>
+            </>
+          ) : (
+            <>
+              <Scan className="w-5 h-5" />
+              <span>{analysis ? 'Analyze Again' : 'Start Analysis'}</span>
+            </>
           )}
-        </div>
+        </button>
 
-        {/* File info - absolute positioned right */}
-        <div className="absolute right-4 flex items-center gap-3 text-[10px] text-slate-600">
-          <span>{(media.file.size / (1024 * 1024)).toFixed(1)} MB</span>
-        </div>
+        {/* View Analysis Button */}
+        {analysis && (
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="flex items-center gap-2 px-6 py-3 text-base font-medium rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all shadow-lg active:scale-95"
+          >
+            <FileText className="w-5 h-5" />
+            <span>View Analysis</span>
+          </button>
+        )}
+      </div>
+
+      {/* Footer Info - Minimal */}
+      <div className="h-8 px-4 flex items-center justify-between border-t border-slate-900 bg-slate-950 shrink-0 text-[10px] text-slate-600">
+        <div>© detextit</div>
+        <div>{(media.file.size / (1024 * 1024)).toFixed(1)} MB</div>
       </div>
 
       {/* Analysis Drawer */}
