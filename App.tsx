@@ -4,7 +4,7 @@ import AnalysisView from './components/AnalysisView';
 import { MediaAsset, MediaType, AgentEvent } from './types';
 import { analyzeMediaAgentic } from './services/geminiService';
 import { captureVideoFrame } from './utils/fileHelpers';
-import { Toaster } from 'sonner';
+
 
 const App: React.FC = () => {
   const [media, setMedia] = useState<MediaAsset | null>(null);
@@ -61,7 +61,6 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen w-screen bg-slate-950 text-slate-100 flex flex-col overflow-hidden">
-      <Toaster position="bottom-right" visibleToasts={1} />
 
       {/* Header - only show on upload screen */}
       {!media && (

@@ -1,8 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { MediaAsset, MediaType, VisualizationSpec, PlayDiagramSpec, AgentEvent, ThinkingStep, OverlayData } from '../types';
-import { Loader2, Scan, Command, X } from 'lucide-react';
+import { Loader2, Scan, Command, FileText } from 'lucide-react';
 import { VideoOverlay } from './VideoOverlay';
-import { toast } from 'sonner';
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from './ui/drawer';
 
 interface AnalysisResult {
   text: string;
@@ -33,7 +41,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [overlayDimensions, setOverlayDimensions] = useState({ width: 0, height: 0 });
   const mediaWrapperRef = useRef<HTMLDivElement>(null);
-  const toastIdRef = useRef<number | string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Agentic state - accumulated overlay and thinking steps
   const [accumulatedOverlay, setAccumulatedOverlay] = useState<PlayDiagramSpec>({
@@ -149,56 +157,7 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
     }
   };
 
-  const buildProgressLines = (stage: string | null, steps: ThinkingStep[]): string[] => {
-    const stageLine = `Stage: ${getStageTitle(stage)}`;
-    const stepLines = steps.slice(-4).map(step => step.thinking);
-    if (stepLines.length === 0) {
-      return [stageLine, 'Processing...'];
-    }
-    return [stageLine, ...stepLines].slice(0, 5);
-  };
-
-  const summarizeToLines = (text: string, maxLines: number): string[] => {
-    const normalized = text.replace(/\s+/g, ' ').trim();
-    if (!normalized) return ['No summary available.'];
-    const sentences = normalized.match(/[^.!?]+[.!?]+|[^.!?]+$/g);
-    const lines = (sentences ?? [normalized]).map(line => line.trim());
-    return lines.slice(0, maxLines);
-  };
-
-  const showThinkingToast = useCallback((title: string, lines: string[], duration: number, showClose: boolean = true) => {
-    const id = toast.custom(
-      (toastId) => (
-        <div className="max-w-[320px] rounded-lg border border-slate-700/70 bg-slate-950/95 px-3 py-2 shadow-lg shadow-black/40 relative">
-          {showClose && (
-            <button
-              onClick={() => toast.dismiss(toastId)}
-              className="absolute top-1.5 right-1.5 p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          )}
-          <div className="text-[10px] uppercase tracking-wide text-slate-400 pr-6">{title}</div>
-          <div className="mt-1 space-y-1">
-            {lines.map((line, index) => (
-              <p key={`${toastId}-${index}`} className="text-xs leading-snug text-slate-100">
-                {line}
-              </p>
-            ))}
-          </div>
-        </div>
-      ),
-      { id: toastIdRef.current ?? undefined, duration }
-    );
-    toastIdRef.current = id;
-  }, []);
-
-  useEffect(() => {
-    if (isAnalyzing) {
-      const lines = buildProgressLines(currentStage, thinkingSteps);
-      showThinkingToast('Analysis', lines, Infinity, false);
-    }
-  }, [currentStage, thinkingSteps, isAnalyzing, showThinkingToast]);
+  
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
@@ -219,15 +178,9 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
     try {
       const result = await onAnalyze(handleAgentEvent);
       setAnalysis(result);
-      if (result?.text) {
-        showThinkingToast('Analysis complete', summarizeToLines(result.text, 5), 10000, true);
-      } else {
-        showThinkingToast('Analysis complete', ['No summary returned.'], 6000, true);
-      }
     } catch (error) {
       console.error('Analysis failed:', error);
       setAnalysis({ text: 'Analysis failed. Please try again.' });
-      showThinkingToast('Analysis failed', ['Please try again.'], 6000, true);
     } finally {
       setIsAnalyzing(false);
       setCurrentStage(null);
@@ -345,40 +298,76 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
           © detextit
         </div>
 
-        {/* Centered Analyze Button */}
-        <button
-          onClick={handleAnalyze}
-          disabled={isAnalyzing}
-          className="flex items-center gap-3 px-5 py-2 text-sm font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-900/30"
-        >
-          {isAnalyzing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Analyzing...</span>
-            </>
-          ) : (
-            <>
-              <Scan className="w-4 h-4" />
-              <span>{analysis ? 'Analyze Again' : 'Analyze Frame'}</span>
-              <span className="hidden sm:flex items-center gap-1 text-xs text-emerald-200/70 border-l border-emerald-500/50 pl-3">
-                {isMac ? (
-                  <>
-                    <Command className="w-3 h-3" />
-                    <span>↵</span>
-                  </>
-                ) : (
-                  <span>Ctrl+↵</span>
-                )}
-              </span>
-            </>
+        {/* Centered Button Group */}
+        <div className="flex items-center gap-2">
+          {/* Analyze Button */}
+          <button
+            onClick={handleAnalyze}
+            disabled={isAnalyzing}
+            className="flex items-center gap-3 px-5 py-2 text-sm font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-900/30"
+          >
+            {isAnalyzing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Analyzing...</span>
+              </>
+            ) : (
+              <>
+                <Scan className="w-4 h-4" />
+                <span>{analysis ? 'Analyze Again' : 'Analyze Frame'}</span>
+                <span className="hidden sm:flex items-center gap-1 text-xs text-emerald-200/70 border-l border-emerald-500/50 pl-3">
+                  {isMac ? (
+                    <>
+                      <Command className="w-3 h-3" />
+                      <span>↵</span>
+                    </>
+                  ) : (
+                    <span>Ctrl+↵</span>
+                  )}
+                </span>
+              </>
+            )}
+          </button>
+
+          {/* View Analysis Button - only show when we have analysis */}
+          {analysis && (
+            <button
+              onClick={() => setDrawerOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all shadow-lg shadow-black/30"
+            >
+              <FileText className="w-4 h-4" />
+              <span>View Analysis</span>
+            </button>
           )}
-        </button>
+        </div>
 
         {/* File info - absolute positioned right */}
         <div className="absolute right-4 flex items-center gap-3 text-[10px] text-slate-600">
           <span>{(media.file.size / (1024 * 1024)).toFixed(1)} MB</span>
         </div>
       </div>
+
+      {/* Analysis Drawer */}
+      <Drawer direction="right" open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle>Analysis Results</DrawerTitle>
+            <DrawerDescription>AI-generated analysis of the current frame</DrawerDescription>
+          </DrawerHeader>
+          <div className="no-scrollbar overflow-y-auto px-4 flex-1">
+            <p className="text-slate-300 leading-relaxed whitespace-pre-wrap">
+              {analysis?.text || 'No analysis available.'}
+            </p>
+          </div>
+          <DrawerFooter>
+            <DrawerClose asChild>
+              <button className="w-full py-2 px-4 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors">
+                Close
+              </button>
+            </DrawerClose>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 };
