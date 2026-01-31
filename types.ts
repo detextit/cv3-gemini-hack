@@ -92,3 +92,46 @@ export interface PlayDiagramSpec {
 }
 
 export type VisualizationSpec = PlayDiagramSpec;
+
+// ============================================
+// Agentic Tool-Calling Types
+// ============================================
+
+export type OverlayStage = 'capture' | 'think' | 'diagram' | 'finalize';
+
+// Partial overlay - can include any subset of visualization elements
+export interface OverlayData {
+  attackLines?: AttackLine[];
+  defenseLines?: DefenseLine[];
+  movementPaths?: MovementPath[];
+  zones?: ZoneRegion[];
+  annotations?: Annotation[];
+}
+
+export interface ShowOverlayArgs {
+  id: string;                 // Unique identifier
+  overlay: OverlayData;       // Visual elements to add/display
+  thinking: string;           // One-line reasoning
+  stage?: OverlayStage;       // UI styling hint
+}
+
+export interface ToolCallEvent {
+  type: 'tool_call';
+  toolName: string;
+  args: ShowOverlayArgs;
+}
+
+export interface CompletionEvent {
+  type: 'completion';
+  finalText: string;
+}
+
+export type AgentEvent = ToolCallEvent | CompletionEvent;
+export type AgentCallback = (event: AgentEvent) => void;
+
+// Thinking step for progress display
+export interface ThinkingStep {
+  id: string;
+  thinking: string;
+  stage?: OverlayStage;
+}

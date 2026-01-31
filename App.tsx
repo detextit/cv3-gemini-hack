@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
 import UploadZone from './components/UploadZone';
 import AnalysisView from './components/AnalysisView';
-import { MediaAsset, MediaType } from './types';
-import { analyzeMedia } from './services/geminiService';
+import { MediaAsset, MediaType, AgentEvent } from './types';
+import { analyzeMediaAgentic } from './services/geminiService';
 import { captureVideoFrame } from './utils/fileHelpers';
 
 const App: React.FC = () => {
@@ -19,7 +19,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (callback: (event: AgentEvent) => void) => {
     if (!media) return null;
 
     try {
@@ -44,11 +44,11 @@ const App: React.FC = () => {
         }
       }
 
-      // Analyze with a default tactical prompt
-      const result = await analyzeMedia(
+      // Analyze with agentic tool-calling loop
+      const result = await analyzeMediaAgentic(
         payload,
-        "Analyze this frame. Describe the main elements and actions. If you can detect objects, provide bounding box visualizations.",
-        []
+        "Analyze this frame. Describe the main elements and actions. Use the show_overlay tool to progressively build up a visual analysis with lines, zones, and annotations.",
+        callback
       );
 
       return result;

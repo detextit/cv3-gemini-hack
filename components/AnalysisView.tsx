@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { MediaAsset, MediaType, VisualizationSpec } from '../types';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { MediaAsset, MediaType, VisualizationSpec, PlayDiagramSpec, AgentEvent, ThinkingStep, OverlayData } from '../types';
 import { Loader2 } from 'lucide-react';
 import { VideoOverlay } from './VideoOverlay';
 import ReactMarkdown from 'react-markdown';
@@ -13,23 +13,39 @@ interface AnalysisViewProps {
   media: MediaAsset;
   onClose: () => void;
   videoRef?: React.RefObject<HTMLVideoElement | null>;
-  onAnalyze: () => Promise<AnalysisResult | null>;
+  onAnalyze: (callback: (event: AgentEvent) => void) => Promise<AnalysisResult | null>;
+}
+
+// Helper to merge overlay data into accumulated spec
+function mergeOverlayIntoSpec(current: PlayDiagramSpec, overlay: OverlayData): PlayDiagramSpec {
+  return {
+    ...current,
+    attackLines: [...(current.attackLines || []), ...(overlay.attackLines || [])],
+    defenseLines: [...(current.defenseLines || []), ...(overlay.defenseLines || [])],
+    movementPaths: [...(current.movementPaths || []), ...(overlay.movementPaths || [])],
+    zones: [...(current.zones || []), ...(overlay.zones || [])],
+    annotations: [...(current.annotations || []), ...(overlay.annotations || [])],
+  };
 }
 
 const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, onAnalyze }) => {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
   const [overlayDimensions, setOverlayDimensions] = useState({ width: 0, height: 0 });
   const mediaContainerRef = useRef<HTMLDivElement>(null);
-  const analyzingRef = useRef(false);
 
-  const ANALYSIS_STEPS = [
-    { title: 'Capturing frame', subtitle: 'Locking onto the current moment.' },
-    { title: 'Thinking', subtitle: 'Parsing movement, spacing, and intent.' },
-    { title: 'Diagramming', subtitle: 'Sketching lanes, rotations, and zones.' },
-    { title: 'Finalizing', subtitle: 'Packaging the play breakdown.' },
-  ];
+  // Agentic state - accumulated overlay and thinking steps
+  const [accumulatedOverlay, setAccumulatedOverlay] = useState<PlayDiagramSpec>({
+    type: 'play_diagram',
+    title: 'Analysis',
+    attackLines: [],
+    defenseLines: [],
+    movementPaths: [],
+    zones: [],
+    annotations: [],
+  });
+  const [thinkingSteps, setThinkingSteps] = useState<ThinkingStep[]>([]);
+  const [currentStage, setCurrentStage] = useState<string | null>(null);
 
   // Update overlay dimensions when media container changes
   useEffect(() => {
@@ -62,41 +78,78 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
     };
   }, [videoRef]);
 
-  useEffect(() => {
-    analyzingRef.current = isAnalyzing;
-  }, [isAnalyzing]);
+  // Callback handler for agentic events
+  const handleAgentEvent = useCallback((event: AgentEvent) => {
+    if (event.type === 'tool_call') {
+      const { args } = event;
 
-  useEffect(() => {
-    if (!isAnalyzing) {
-      setActiveStepIndex(null);
-      return;
+      // Merge new overlay elements into accumulated state
+      if (args.overlay) {
+        setAccumulatedOverlay(prev => mergeOverlayIntoSpec(prev, args.overlay));
+      }
+
+      // Update current stage
+      if (args.stage) {
+        setCurrentStage(args.stage);
+      }
+
+      // Append thinking step to progress list
+      setThinkingSteps(prev => [
+        ...prev,
+        {
+          id: args.id,
+          thinking: args.thinking,
+          stage: args.stage,
+        }
+      ]);
     }
-
-    let currentIndex = 0;
-    setActiveStepIndex(currentIndex);
-
-    const interval = window.setInterval(() => {
-      if (!analyzingRef.current) return;
-      currentIndex = Math.min(currentIndex + 1, ANALYSIS_STEPS.length - 1);
-      setActiveStepIndex(currentIndex);
-    }, 1600);
-
-    return () => window.clearInterval(interval);
-  }, [isAnalyzing, ANALYSIS_STEPS.length]);
+  }, []);
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
     setAnalysis(null);
+    // Reset agentic state
+    setAccumulatedOverlay({
+      type: 'play_diagram',
+      title: 'Analysis',
+      attackLines: [],
+      defenseLines: [],
+      movementPaths: [],
+      zones: [],
+      annotations: [],
+    });
+    setThinkingSteps([]);
+    setCurrentStage(null);
+
     try {
-      const result = await onAnalyze();
+      const result = await onAnalyze(handleAgentEvent);
       setAnalysis(result);
     } catch (error) {
       console.error('Analysis failed:', error);
       setAnalysis({ text: 'Analysis failed. Please try again.' });
     } finally {
       setIsAnalyzing(false);
+      setCurrentStage(null);
     }
   };
+
+  // Get human-readable stage title
+  const getStageTitle = (stage: string | null): string => {
+    switch (stage) {
+      case 'capture': return 'Capturing frame';
+      case 'think': return 'Thinking';
+      case 'diagram': return 'Diagramming';
+      case 'finalize': return 'Finalizing';
+      default: return 'Analyzing';
+    }
+  };
+
+  // Check if we have any overlay elements to show
+  const hasOverlayElements = accumulatedOverlay.attackLines?.length ||
+    accumulatedOverlay.defenseLines?.length ||
+    accumulatedOverlay.movementPaths?.length ||
+    accumulatedOverlay.zones?.length ||
+    accumulatedOverlay.annotations?.length;
 
   const statusLabel = isAnalyzing ? 'Analyzing' : analysis ? 'Ready' : 'Idle';
 
@@ -136,7 +189,17 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
               />
             )}
 
-            {analysis?.visualizations && overlayDimensions.width > 0 && (
+            {/* Show accumulated overlay during analysis (real-time updates) */}
+            {isAnalyzing && hasOverlayElements && overlayDimensions.width > 0 && (
+              <VideoOverlay
+                specs={[accumulatedOverlay]}
+                containerWidth={overlayDimensions.width}
+                containerHeight={overlayDimensions.height}
+              />
+            )}
+
+            {/* Show final overlay after analysis completes */}
+            {!isAnalyzing && analysis?.visualizations && overlayDimensions.width > 0 && (
               <VideoOverlay
                 specs={analysis.visualizations}
                 containerWidth={overlayDimensions.width}
@@ -144,19 +207,13 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
               />
             )}
 
-            {isAnalyzing && activeStepIndex !== null && (
-              <div className="absolute inset-0 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
-                <div className="flex flex-col items-center gap-3 text-center px-6 py-5 rounded-xl border border-slate-700/60 bg-slate-950/70 shadow-lg shadow-black/40 animate-in fade-in zoom-in-95 duration-300">
-                  <Loader2 className="w-6 h-6 text-slate-200 animate-spin" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-100">
-                      {ANALYSIS_STEPS[activeStepIndex].title}
-                    </p>
-                    <p className="text-xs text-slate-300">
-                      {ANALYSIS_STEPS[activeStepIndex].subtitle}
-                    </p>
-                  </div>
-                </div>
+            {/* Compact analyzing indicator - positioned in corner so overlay is visible */}
+            {isAnalyzing && (
+              <div className="absolute top-3 left-3 flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/60 bg-slate-950/80 shadow-lg shadow-black/40 animate-in fade-in slide-in-from-top-2 duration-300">
+                <Loader2 className="w-4 h-4 text-slate-200 animate-spin" />
+                <span className="text-sm font-medium text-slate-100">
+                  {getStageTitle(currentStage)}
+                </span>
               </div>
             )}
           </div>
@@ -191,10 +248,37 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
           )}
 
           {isAnalyzing && (
-            <div className="h-full flex flex-col items-center justify-center text-center">
-              <Loader2 className="w-6 h-6 text-slate-300 animate-spin mb-3" />
-              <h3 className="text-slate-100 font-medium mb-1">Analyzing...</h3>
-              <p className="text-slate-400 text-sm">This may take a few seconds.</p>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 text-slate-300 animate-spin" />
+                <h3 className="text-slate-100 font-medium">Analyzing...</h3>
+              </div>
+
+              {/* Thinking steps progress */}
+              {thinkingSteps.length > 0 && (
+                <div className="space-y-2">
+                  {thinkingSteps.map((step, index) => (
+                    <div
+                      key={step.id}
+                      className="flex items-start gap-2 text-sm animate-in fade-in slide-in-from-left-2 duration-200"
+                      style={{ animationDelay: `${index * 50}ms` }}
+                    >
+                      <div className={`w-2 h-2 mt-1.5 rounded-full shrink-0 ${
+                        step.stage === 'capture' ? 'bg-yellow-400' :
+                        step.stage === 'think' ? 'bg-blue-400' :
+                        step.stage === 'diagram' ? 'bg-green-400' :
+                        step.stage === 'finalize' ? 'bg-purple-400' :
+                        'bg-slate-400'
+                      }`} />
+                      <p className="text-slate-300">{step.thinking}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {thinkingSteps.length === 0 && (
+                <p className="text-slate-400 text-sm">Processing image...</p>
+              )}
             </div>
           )}
 

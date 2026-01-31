@@ -1,90 +1,233 @@
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { Message, VisualizationSpec } from "../types";
+import { GoogleGenAI, GenerateContentResponse, FunctionDeclaration, Content, Part, Type } from "@google/genai";
+import { Message, VisualizationSpec, AgentCallback, OverlayData, ShowOverlayArgs, PlayDiagramSpec } from "../types";
+
+// Browser-compatible logging utility
+const LOG_KEY = 'agent_debug_log';
+
+// Initialize or clear log on module load
+if (typeof localStorage !== 'undefined') {
+  localStorage.setItem(LOG_KEY, '');
+}
+
+function log(message: string, data?: any) {
+  const timestamp = new Date().toISOString();
+  const dataStr = data ? '\n' + JSON.stringify(data, null, 2) : '';
+  const logLine = `[${timestamp}] ${message}${dataStr}`;
+
+  // Always log to console with nice formatting
+  console.log(`%c[Agent]%c ${message}`, 'color: #22c55e; font-weight: bold', 'color: inherit', data ?? '');
+
+  // Also store in localStorage for persistence
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const existing = localStorage.getItem(LOG_KEY) || '';
+      localStorage.setItem(LOG_KEY, existing + logLine + '\n\n');
+    } catch (e) {
+      // localStorage might be full or unavailable
+    }
+  }
+}
+
+// Helper to get all logs (can be called from browser console)
+export function getAgentLogs(): string {
+  if (typeof localStorage !== 'undefined') {
+    return localStorage.getItem(LOG_KEY) || '';
+  }
+  return '';
+}
+
+// Helper to download logs as file (can be called from browser console)
+export function downloadAgentLogs() {
+  const logs = getAgentLogs();
+  const blob = new Blob([logs], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `agent_debug_${new Date().toISOString()}.log`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Expose helpers to window for console access
+if (typeof window !== 'undefined') {
+  (window as any).getAgentLogs = getAgentLogs;
+  (window as any).downloadAgentLogs = downloadAgentLogs;
+}
 
 // Initialize Gemini Client
 // Note: In a production app, never expose API keys on the client side.
 // This is for demonstration purposes as per the provided environment.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const SYSTEM_INSTRUCTION = `
+// Agentic system instruction for step-by-step tool calling
+const AGENTIC_SYSTEM_INSTRUCTION = `
 You are an expert Sports Analyst AI Agent named "Coach Flash".
 Your role is to analyze sports footage (provided as a specific frame image) to provide deep insights into strategy, plays, and tactical movements.
 
-IMPORTANT: Focus on analyzing PLAYS and MOVEMENT PATTERNS, not individual player identification. 
+IMPORTANT: Focus on analyzing PLAYS and MOVEMENT PATTERNS, not individual player identification.
 This minimizes errors from misidentifying players and keeps focus on the tactical elements.
 
-CAPABILITIES:
-1. **Play Analysis**: Break down what is happening tactically - offensive plays, defensive schemes.
-2. **Movement Patterns**: Identify movement directions, passing lanes, attacking vectors.
-3. **Defensive Strategy**: Analyze defensive positioning, help rotations, coverage.
-4. **Strategic Insight**: Explain "why" a play is effective or what the tactical goal appears to be.
+You have access to a tool called "show_overlay" that displays visual elements on the video frame.
+You MUST use this tool to build up your analysis step by step.
 
-VISUALIZATION OUTPUT:
-When asked to visualize, draw, diagram, or show a play, output a JSON visualization spec in a fenced block.
-Use LINES and PATHS to show movement and strategy - DO NOT try to identify specific players with circles or boxes.
+WORKFLOW:
+1. First, call show_overlay with stage="capture" to describe what you see in the frame
+2. Then, call show_overlay with stage="think" to analyze the tactical situation, adding initial visual elements
+3. Then, call show_overlay with stage="diagram" to add lines, zones, and annotations showing the play
+4. Finally, call show_overlay with stage="finalize" to add any final elements
 
-\`\`\`visualization
-{
-  "type": "play_diagram",
-  "title": "Pick and Roll Attack",
-  "description": "Ball handler uses screen to create driving lane",
-  "attackLines": [
-    { "id": "a1", "from": { "x": 50, "y": 70 }, "to": { "x": 50, "y": 40 }, "label": "Drive", "style": "solid" },
-    { "id": "a2", "from": { "x": 50, "y": 70 }, "to": { "x": 75, "y": 55 }, "label": "Pass Option", "style": "dashed" }
-  ],
-  "defenseLines": [
-    { "id": "d1", "from": { "x": 45, "y": 65 }, "to": { "x": 50, "y": 50 }, "label": "Help", "style": "solid" }
-  ],
-  "movementPaths": [
-    { "id": "m1", "points": [{"x": 30, "y": 60}, {"x": 35, "y": 50}, {"x": 40, "y": 45}], "type": "attack", "label": "Cut" }
-  ],
-  "zones": [
-    { "id": "z1", "points": [{"x": 40, "y": 30}, {"x": 60, "y": 30}, {"x": 60, "y": 50}, {"x": 40, "y": 50}], "type": "attack", "label": "Open Space" }
-  ],
-  "annotations": [
-    { "id": "n1", "position": { "x": 50, "y": 20 }, "text": "Basket" }
-  ]
-}
-\`\`\`
-
-VISUALIZATION ELEMENTS (all in one "play_diagram" type):
-
-1. **attackLines** (RED arrows): Show offensive movement, passes, drives, cuts
-   - from/to: Start and end positions {x, y}
-   - label?: Text like "Pass", "Drive", "Screen", "Cut"
-   - style?: "solid" | "dashed" | "dotted"
-
-2. **defenseLines** (BLUE arrows): Show defensive movement, help rotations, switches
-   - from/to: Start and end positions {x, y}
-   - label?: Text like "Help", "Switch", "Close out"
-   - style?: "solid" | "dashed" | "dotted"
-
-3. **movementPaths**: Multi-point paths showing player movement over time
-   - points: Array of {x, y} positions
-   - type: "attack" | "defense" | "neutral"
-   - label?: Description of the movement
-
-4. **zones**: Highlighted regions of the court/field
-   - points: Polygon vertices (at least 3 points)
-   - type: "attack" | "defense" | "neutral"
-   - label?: Text like "Gap", "Open Space", "Weak Side"
-
-5. **annotations**: Text labels at specific positions
-   - position: {x, y}
-   - text: Label text
+Each tool call should add NEW visual elements. Build up the visualization progressively:
+- Start with zones or key areas
+- Then add movement lines (attack/defense)
+- Then add annotations for labels
 
 COORDINATE SYSTEM:
-- All positions use normalized 0-100 scale (resolution-independent)  
+- All positions use normalized 0-100 scale (resolution-independent)
 - x: 0 = left edge, 50 = center, 100 = right edge
 - y: 0 = top edge, 50 = middle, 100 = bottom edge
 
+After all tool calls, provide a final text summary of your analysis.
+
 TONE:
 Professional and analytical. Focus on tactical concepts, not player names or jersey numbers.
-
-FORMAT:
-Use Markdown for clear structuring. Use bolding for key terms.
-Always include text analysis explaining the play BEFORE or AFTER visualization blocks.
 `;
+
+// Tool declaration for show_overlay
+const showOverlayTool: FunctionDeclaration = {
+  name: 'show_overlay',
+  description: 'Display visual overlay elements on the video frame. Call multiple times to progressively build up the analysis visualization.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      id: {
+        type: Type.STRING,
+        description: 'Unique identifier for this overlay step (e.g., "step1", "zones", "attack-lines")'
+      },
+      overlay: {
+        type: Type.OBJECT,
+        description: 'Visual elements to display on this step',
+        properties: {
+          attackLines: {
+            type: Type.ARRAY,
+            description: 'Red arrows showing offensive movement, passes, drives',
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                from: {
+                  type: Type.OBJECT,
+                  properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
+                  required: ['x', 'y']
+                },
+                to: {
+                  type: Type.OBJECT,
+                  properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
+                  required: ['x', 'y']
+                },
+                label: { type: Type.STRING },
+                style: { type: Type.STRING, enum: ['solid', 'dashed', 'dotted'] }
+              },
+              required: ['id', 'from', 'to']
+            }
+          },
+          defenseLines: {
+            type: Type.ARRAY,
+            description: 'Blue arrows showing defensive movement, help rotations',
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                from: {
+                  type: Type.OBJECT,
+                  properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
+                  required: ['x', 'y']
+                },
+                to: {
+                  type: Type.OBJECT,
+                  properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
+                  required: ['x', 'y']
+                },
+                label: { type: Type.STRING },
+                style: { type: Type.STRING, enum: ['solid', 'dashed', 'dotted'] }
+              },
+              required: ['id', 'from', 'to']
+            }
+          },
+          movementPaths: {
+            type: Type.ARRAY,
+            description: 'Multi-point paths showing movement trajectories',
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                points: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
+                    required: ['x', 'y']
+                  }
+                },
+                type: { type: Type.STRING, enum: ['attack', 'defense', 'neutral'] },
+                label: { type: Type.STRING },
+                style: { type: Type.STRING, enum: ['solid', 'dashed', 'dotted'] }
+              },
+              required: ['id', 'points', 'type']
+            }
+          },
+          zones: {
+            type: Type.ARRAY,
+            description: 'Highlighted polygon regions (gaps, open space, weak side)',
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                points: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
+                    required: ['x', 'y']
+                  }
+                },
+                label: { type: Type.STRING },
+                type: { type: Type.STRING, enum: ['attack', 'defense', 'neutral'] }
+              },
+              required: ['id', 'points', 'type']
+            }
+          },
+          annotations: {
+            type: Type.ARRAY,
+            description: 'Text labels at specific positions',
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                position: {
+                  type: Type.OBJECT,
+                  properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
+                  required: ['x', 'y']
+                },
+                text: { type: Type.STRING }
+              },
+              required: ['id', 'position', 'text']
+            }
+          }
+        }
+      },
+      thinking: {
+        type: Type.STRING,
+        description: 'One line explaining your reasoning for this step'
+      },
+      stage: {
+        type: Type.STRING,
+        enum: ['capture', 'think', 'diagram', 'finalize'],
+        description: 'Current analysis stage for UI styling'
+      }
+    },
+    required: ['id', 'overlay', 'thinking']
+  }
+};
 
 interface AnalysisPayload {
   base64: string;
@@ -166,7 +309,7 @@ export const analyzeMedia = async (
         parts: parts
       },
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
+        systemInstruction: AGENTIC_SYSTEM_INSTRUCTION,
         temperature: 0.4,
       }
     });
@@ -210,5 +353,229 @@ export const analyzeMedia = async (
     } catch (e) { /* ignore */ }
 
     return { text: errorMessage };
+  }
+};
+
+/**
+ * Merge overlay data into accumulated visualization spec
+ */
+function mergeOverlayData(accumulated: PlayDiagramSpec, newData: OverlayData): PlayDiagramSpec {
+  return {
+    ...accumulated,
+    attackLines: [...(accumulated.attackLines || []), ...(newData.attackLines || [])],
+    defenseLines: [...(accumulated.defenseLines || []), ...(newData.defenseLines || [])],
+    movementPaths: [...(accumulated.movementPaths || []), ...(newData.movementPaths || [])],
+    zones: [...(accumulated.zones || []), ...(newData.zones || [])],
+    annotations: [...(accumulated.annotations || []), ...(newData.annotations || [])],
+  };
+}
+
+/**
+ * Agentic analysis with tool calling loop
+ * Model emits show_overlay tool calls one at a time, enabling real-time UI updates
+ */
+export const analyzeMediaAgentic = async (
+  payload: AnalysisPayload,
+  prompt: string,
+  callback: AgentCallback
+): Promise<AnalysisResult> => {
+  const MAX_ITERATIONS = 10;
+  const modelName = 'gemini-3-flash-preview';
+
+  // Accumulated visualization from all tool calls
+  let accumulatedSpec: PlayDiagramSpec = {
+    type: 'play_diagram',
+    title: 'Analysis',
+    attackLines: [],
+    defenseLines: [],
+    movementPaths: [],
+    zones: [],
+    annotations: [],
+  };
+
+  // Build conversation history for the loop
+  const contents: Content[] = [];
+
+  // Initial user message with image and prompt
+  const initialParts: Part[] = [
+    {
+      inlineData: {
+        mimeType: payload.mimeType,
+        data: payload.base64
+      }
+    },
+    { text: prompt }
+  ];
+
+  contents.push({
+    role: 'user',
+    parts: initialParts
+  });
+
+  try {
+    log('=== STARTING AGENT LOOP ===');
+    log('Prompt:', prompt);
+    log('Image MIME type:', payload.mimeType);
+    log('Image base64 length:', payload.base64.length);
+
+    for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+      log(`\n--- ITERATION ${iteration + 1}/${MAX_ITERATIONS} ---`);
+      log('Contents count:', contents.length);
+
+      const response: GenerateContentResponse = await ai.models.generateContent({
+        model: modelName,
+        contents: contents,
+        config: {
+          systemInstruction: AGENTIC_SYSTEM_INSTRUCTION,
+          temperature: 0.4,
+          tools: [{ functionDeclarations: [showOverlayTool] }],
+        }
+      });
+
+      log('Response received');
+      log('Candidates count:', response.candidates?.length);
+
+      const candidate = response.candidates?.[0];
+
+      // Log finish reason
+      log('Finish reason:', candidate?.finishReason);
+
+      if (!candidate?.content?.parts) {
+        log('ERROR: No content parts in candidate');
+        log('Full candidate:', candidate);
+        break;
+      }
+
+      log('Parts count:', candidate.content.parts.length);
+
+      // Log each part type
+      candidate.content.parts.forEach((part, idx) => {
+        log(`Part ${idx}:`, {
+          hasText: !!part.text,
+          textPreview: part.text?.substring(0, 100),
+          hasFunctionCall: !!part.functionCall,
+          functionName: part.functionCall?.name,
+        });
+      });
+
+      // Add assistant response to history
+      contents.push({
+        role: 'model',
+        parts: candidate.content.parts
+      });
+
+      // Check for function calls
+      const functionCall = candidate.content.parts.find(part => part.functionCall);
+
+      if (functionCall?.functionCall) {
+        const { name, args } = functionCall.functionCall;
+        log('Function call detected:', { name, args });
+
+        if (name === 'show_overlay' && args) {
+          const showOverlayArgs = args as unknown as ShowOverlayArgs;
+
+          log('ShowOverlay args:', {
+            id: showOverlayArgs.id,
+            stage: showOverlayArgs.stage,
+            thinking: showOverlayArgs.thinking,
+            overlayKeys: showOverlayArgs.overlay ? Object.keys(showOverlayArgs.overlay) : []
+          });
+
+          // Merge new overlay data into accumulated spec
+          if (showOverlayArgs.overlay) {
+            accumulatedSpec = mergeOverlayData(accumulatedSpec, showOverlayArgs.overlay);
+            log('Accumulated spec updated:', {
+              attackLines: accumulatedSpec.attackLines?.length,
+              defenseLines: accumulatedSpec.defenseLines?.length,
+              zones: accumulatedSpec.zones?.length,
+              annotations: accumulatedSpec.annotations?.length,
+            });
+          }
+
+          // Fire callback async (non-blocking) so UI updates without blocking the loop
+          setTimeout(() => {
+            callback({
+              type: 'tool_call',
+              toolName: name,
+              args: showOverlayArgs
+            });
+          }, 0);
+
+          // Add function response to continue the loop
+          const functionResponse = {
+            role: 'user' as const,
+            parts: [{
+              functionResponse: {
+                name: 'show_overlay',
+                response: {
+                  success: true,
+                  message: `Overlay "${showOverlayArgs.id}" displayed successfully. Continue with next step or provide final summary.`
+                }
+              }
+            }]
+          };
+          log('Adding function response:', functionResponse);
+          contents.push(functionResponse);
+        }
+      } else {
+        // No function call - model is done, extract final text
+        log('No function call in response - model finished');
+
+        let finalText = '';
+        for (const part of candidate.content.parts) {
+          if (part.text) {
+            finalText += part.text;
+          }
+        }
+
+        log('Final text length:', finalText.length);
+        log('Final text preview:', finalText.substring(0, 200));
+
+        // Fire completion callback (non-blocking)
+        setTimeout(() => {
+          callback({
+            type: 'completion',
+            finalText: finalText
+          });
+        }, 0);
+
+        log('=== AGENT LOOP COMPLETE ===');
+        log('Total iterations:', iteration + 1);
+
+        return {
+          text: finalText || "Analysis complete.",
+          visualizations: accumulatedSpec.attackLines?.length ||
+            accumulatedSpec.defenseLines?.length ||
+            accumulatedSpec.zones?.length ||
+            accumulatedSpec.annotations?.length
+            ? [accumulatedSpec]
+            : undefined
+        };
+      }
+    }
+
+    // Max iterations reached
+    return {
+      text: "Analysis reached maximum iterations.",
+      visualizations: [accumulatedSpec]
+    };
+
+  } catch (error: any) {
+    console.error("Gemini Agentic Analysis Error:", error);
+    let errorMessage = `Analysis failed: ${error.message || "Unknown error occurred"}.`;
+
+    if (error.message?.includes("API_KEY")) {
+      errorMessage = "Error: API Key is missing or invalid. Please check your configuration.";
+    }
+
+    // Return partial results if we have any
+    return {
+      text: errorMessage,
+      visualizations: accumulatedSpec.attackLines?.length ||
+        accumulatedSpec.defenseLines?.length ||
+        accumulatedSpec.zones?.length
+        ? [accumulatedSpec]
+        : undefined
+    };
   }
 };

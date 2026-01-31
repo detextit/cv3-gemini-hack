@@ -4,6 +4,7 @@ package-lock.json
 dist
 .codex
 
+google-genai-docs
 
 *.DS_Store
 .env
