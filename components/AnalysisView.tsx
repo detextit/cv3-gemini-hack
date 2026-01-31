@@ -348,28 +348,24 @@ const AnalysisView: React.FC<AnalysisViewProps> = ({ media, onClose, videoRef, o
       </div>
 
       {/* Analysis Drawer */}
-      <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
+      <Drawer direction="right" open={drawerOpen} onOpenChange={setDrawerOpen}>
         <DrawerContent>
-          <div className="mx-auto w-full max-w-2xl">
-            <DrawerHeader>
-              <DrawerTitle>Analysis Results</DrawerTitle>
-              <DrawerDescription>AI-generated analysis of the current frame</DrawerDescription>
-            </DrawerHeader>
-            <div className="px-4 pb-4 max-h-[60vh] overflow-y-auto">
-              <div className="prose prose-invert prose-sm max-w-none">
-                <p className="text-slate-300 leading-relaxed whitespace-pre-wrap">
-                  {analysis?.text || 'No analysis available.'}
-                </p>
-              </div>
-            </div>
-            <DrawerFooter>
-              <DrawerClose asChild>
-                <button className="w-full py-2 px-4 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors">
-                  Close
-                </button>
-              </DrawerClose>
-            </DrawerFooter>
+          <DrawerHeader>
+            <DrawerTitle>Analysis Results</DrawerTitle>
+            <DrawerDescription>AI-generated analysis of the current frame</DrawerDescription>
+          </DrawerHeader>
+          <div className="no-scrollbar overflow-y-auto px-4 flex-1">
+            <p className="text-slate-300 leading-relaxed whitespace-pre-wrap">
+              {analysis?.text || 'No analysis available.'}
+            </p>
           </div>
+          <DrawerFooter>
+            <DrawerClose asChild>
+              <button className="w-full py-2 px-4 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors">
+                Close
+              </button>
+            </DrawerClose>
+          </DrawerFooter>
         </DrawerContent>
       </Drawer>
     </div>
