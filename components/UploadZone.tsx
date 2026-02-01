@@ -88,7 +88,7 @@ const UploadZone: React.FC<UploadZoneProps> = ({ onUpload, isProcessing }) => {
         {isReading ? 'Reading media...' : 'Upload a video or image'}
       </h3>
       <p className="text-sm text-slate-400 mt-2 text-center">
-        Drag and drop or click to browse. MP4, MOV, JPG, PNG up to 20MB.
+        Drag and drop or click to browse. MP4, MOV, JPG, PNG.
       </p>
 
       <label
