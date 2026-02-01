@@ -9,6 +9,7 @@ export interface MediaAsset {
   type: MediaType;
   base64?: string;
   mimeType: string;
+  autoAnalyze?: boolean;
 }
 
 export interface Message {
@@ -97,8 +98,6 @@ export type VisualizationSpec = PlayDiagramSpec;
 // Agentic Tool-Calling Types
 // ============================================
 
-export type OverlayStage = 'capture' | 'think' | 'diagram' | 'finalize';
-
 // Partial overlay - can include any subset of visualization elements
 export interface OverlayData {
   attackLines?: AttackLine[];
@@ -109,10 +108,8 @@ export interface OverlayData {
 }
 
 export interface ShowOverlayArgs {
-  id: string;                 // Unique identifier
-  overlay: OverlayData;       // Visual elements to add/display
-  thinking: string;           // One-line reasoning
-  stage?: OverlayStage;       // UI styling hint
+  overlay: OverlayData;       // Visual elements to draw
+  thinking?: string;          // Model's reasoning (scratch space)
 }
 
 export interface ToolCallEvent {
@@ -131,7 +128,5 @@ export type AgentCallback = (event: AgentEvent) => void;
 
 // Thinking step for progress display
 export interface ThinkingStep {
-  id: string;
   thinking: string;
-  stage?: OverlayStage;
 }

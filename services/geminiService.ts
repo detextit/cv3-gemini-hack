@@ -61,24 +61,25 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Agentic system instruction for step-by-step tool calling
 const AGENTIC_SYSTEM_INSTRUCTION = `
-You are an expert Sports Analyst Agent.
-Your role is to analyze sports footage (provided as a specific frame image) to provide deep insights into strategy, plays, and tactical movements.
+You are an expert Basketball (NBA) Analyst Agent.
+Your role is to analyze basketball footage (provided as a specific frame image) to provide deep insights into strategy, plays, and tactical movements.
 
-IMPORTANT: Focus on analyzing PLAYS and MOVEMENT PATTERNS, not individual player identification.
-This minimizes errors from misidentifying players and keeps focus on the tactical elements.
+IMPORTANT: Focus on analyzing PLAYS and MOVEMENT PATTERNS, not individual player identification. No need to label players (e.g., ball handler), officials, or elements of the court. 
+This minimizes errors from misidentifying players and keeps focus on the tactical elements. Focus on the tactical elements of the play. 
 
-You have access to a tool called "show_overlay" that displays visual elements on the video frame.
-You MUST use this tool to build up your analysis step by step.
+You have access to a tool called "show_overlay" that draws visual elements on the video frame.
+Use this tool to build up your analysis progressively.
 
 WORKFLOW:
-1. First, call show_overlay with stage="diagram" to add key visual elements (zones, lines, arrows) showing the main play
-2. Then, call show_overlay with stage="think" to add supporting analysis elements and refine the diagram
-3. Finally, call show_overlay with stage="finalize" to add any final touches and annotations
+1. Call show_overlay to add visual elements (lines, zones, arrows)
+2. Each call should add NEW elements - build up the diagram progressively
+3. After all visual elements are added, provide a final text summary
 
-Each tool call should add NEW visual elements. Build up the visualization progressively:
-- Start with zones or key areas
-- Then add movement lines (attack/defense)
-- Then add annotations for labels
+VISUAL ELEMENTS:
+- attackLines: Red arrows for offensive movement, passes, drives (from/to coords)
+- defenseLines: Blue arrows for defensive movement, help rotations (from/to coords)
+- zones: Highlighted polygon regions for gaps, open space, weak side (points array)
+- annotations: Text labels at specific positions (position and text)
 
 COORDINATE SYSTEM:
 - All positions use normalized 0-100 scale (resolution-independent)
@@ -89,159 +90,91 @@ CRITICAL - AVOID CONGESTED OVERLAYS:
 - Use MAXIMUM 3-4 annotations/labels total across ALL tool calls
 - Labels must be spaced at least 15 units apart (in x or y) to prevent overlap
 - Choose EITHER line labels OR separate annotations for the same concept - NEVER BOTH
-- If a line already has a label, do NOT add a nearby annotation with similar text
 - Prioritize only the MOST IMPORTANT 2-3 tactical elements to label
 - Leave obvious movements unlabeled - let the arrows/lines speak for themselves
-- Place labels at the END of lines or in clear open areas of the frame
 - When in doubt, use FEWER labels - clarity over completeness
-
-After all tool calls, provide a final text summary of your analysis.
 
 FINAL RESPONSE FORMAT:
 - Your final summary MUST be in plain text format
 - Do NOT use markdown formatting (no **, __, *, _, #, etc.)
 - Do NOT use bullet points or numbered lists
-- Write concise text summary. Limit to 2-3 sentences.
-- Use simple punctuation only
+- Write concise text summary. Clean and simple for the reader.
 
 TONE:
-Professional and analytical. Focus on tactical concepts, not player names or jersey numbers.
+Professional and analytical. Focus on tactical and strategic concepts, not player names or jersey numbers.
 `;
 
 // Tool declaration for show_overlay
+// Schema must be explicit enough for model to output correct coordinate structure
 const showOverlayTool: FunctionDeclaration = {
   name: 'show_overlay',
-  description: 'Display visual overlay elements on the video frame. Call multiple times to progressively build up the analysis visualization.',
+  description: 'Draw visual elements on the video frame. Call multiple times to build up the analysis. All coordinates use 0-100 normalized scale.',
   parameters: {
     type: Type.OBJECT,
     properties: {
-      id: {
-        type: Type.STRING,
-        description: 'Unique identifier for this overlay step (e.g., "step1", "zones", "attack-lines")'
-      },
       overlay: {
         type: Type.OBJECT,
-        description: 'Visual elements to display on this step',
+        description: 'Visual elements to draw',
         properties: {
           attackLines: {
             type: Type.ARRAY,
-            description: 'Red arrows showing offensive movement, passes, drives',
+            description: 'Red arrows for offensive movement',
             items: {
               type: Type.OBJECT,
               properties: {
-                id: { type: Type.STRING },
-                from: {
-                  type: Type.OBJECT,
-                  properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
-                  required: ['x', 'y']
-                },
-                to: {
-                  type: Type.OBJECT,
-                  properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
-                  required: ['x', 'y']
-                },
-                label: { type: Type.STRING },
-                style: { type: Type.STRING, enum: ['solid', 'dashed', 'dotted'] }
+                from: { type: Type.OBJECT, properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } }, required: ['x', 'y'] },
+                to: { type: Type.OBJECT, properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } }, required: ['x', 'y'] },
+                label: { type: Type.STRING }
               },
-              required: ['id', 'from', 'to']
+              required: ['from', 'to']
             }
           },
           defenseLines: {
             type: Type.ARRAY,
-            description: 'Blue arrows showing defensive movement, help rotations',
+            description: 'Blue arrows for defensive movement',
             items: {
               type: Type.OBJECT,
               properties: {
-                id: { type: Type.STRING },
-                from: {
-                  type: Type.OBJECT,
-                  properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
-                  required: ['x', 'y']
-                },
-                to: {
-                  type: Type.OBJECT,
-                  properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
-                  required: ['x', 'y']
-                },
-                label: { type: Type.STRING },
-                style: { type: Type.STRING, enum: ['solid', 'dashed', 'dotted'] }
+                from: { type: Type.OBJECT, properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } }, required: ['x', 'y'] },
+                to: { type: Type.OBJECT, properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } }, required: ['x', 'y'] },
+                label: { type: Type.STRING }
               },
-              required: ['id', 'from', 'to']
-            }
-          },
-          movementPaths: {
-            type: Type.ARRAY,
-            description: 'Multi-point paths showing movement trajectories',
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING },
-                points: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
-                    required: ['x', 'y']
-                  }
-                },
-                type: { type: Type.STRING, enum: ['attack', 'defense', 'neutral'] },
-                label: { type: Type.STRING },
-                style: { type: Type.STRING, enum: ['solid', 'dashed', 'dotted'] }
-              },
-              required: ['id', 'points', 'type']
+              required: ['from', 'to']
             }
           },
           zones: {
             type: Type.ARRAY,
-            description: 'Highlighted polygon regions (gaps, open space, weak side)',
+            description: 'Highlighted polygon regions',
             items: {
               type: Type.OBJECT,
               properties: {
-                id: { type: Type.STRING },
-                points: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
-                    required: ['x', 'y']
-                  }
-                },
+                points: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } }, required: ['x', 'y'] } },
                 label: { type: Type.STRING },
                 type: { type: Type.STRING, enum: ['attack', 'defense', 'neutral'] }
               },
-              required: ['id', 'points', 'type']
+              required: ['points', 'type']
             }
           },
           annotations: {
             type: Type.ARRAY,
-            description: 'Text labels at specific positions',
+            description: 'Text labels',
             items: {
               type: Type.OBJECT,
               properties: {
-                id: { type: Type.STRING },
-                position: {
-                  type: Type.OBJECT,
-                  properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } },
-                  required: ['x', 'y']
-                },
+                position: { type: Type.OBJECT, properties: { x: { type: Type.NUMBER }, y: { type: Type.NUMBER } }, required: ['x', 'y'] },
                 text: { type: Type.STRING }
               },
-              required: ['id', 'position', 'text']
+              required: ['position', 'text']
             }
           }
         }
       },
       thinking: {
         type: Type.STRING,
-        description: 'One line explaining your reasoning for this step'
-      },
-      stage: {
-        type: Type.STRING,
-        enum: ['diagram', 'think', 'finalize'],
-        description: 'Current analysis stage: diagram (primary visual), think (supporting analysis), finalize (final touches)'
+        description: 'Your reasoning (scratch space)'
       }
     },
-    required: ['id', 'overlay', 'thinking']
+    required: ['overlay']
   }
 };
 
@@ -326,7 +259,10 @@ export const analyzeMedia = async (
       },
       config: {
         systemInstruction: AGENTIC_SYSTEM_INSTRUCTION,
-        temperature: 0.4,
+        temperature: 0,
+        thinkingConfig: {
+          thinkingBudget: 0
+        }
       }
     });
 
@@ -463,8 +399,11 @@ export const analyzeMediaAgentic = async (
         contents: contents,
         config: {
           systemInstruction: AGENTIC_SYSTEM_INSTRUCTION,
-          temperature: 0.4,
+          temperature: 0,
           tools: [{ functionDeclarations: [showOverlayTool] }],
+          thinkingConfig: {
+            thinkingBudget: 0
+          }
         }
       });
 
@@ -521,8 +460,6 @@ export const analyzeMediaAgentic = async (
           const showOverlayArgs = args as unknown as ShowOverlayArgs;
 
           log('ShowOverlay args:', {
-            id: showOverlayArgs.id,
-            stage: showOverlayArgs.stage,
             thinking: showOverlayArgs.thinking,
             overlayKeys: showOverlayArgs.overlay ? Object.keys(showOverlayArgs.overlay) : []
           });
@@ -550,8 +487,8 @@ export const analyzeMediaAgentic = async (
           // Determine response message based on progress toward minimum iterations
           const remainingCalls = MIN_ITERATIONS - toolCallCount;
           const progressMessage = remainingCalls > 0
-            ? `Overlay "${showOverlayArgs.id}" displayed. You MUST make at least ${remainingCalls} more tool calls before providing final summary.`
-            : `Overlay "${showOverlayArgs.id}" displayed successfully. Continue with next step or provide final summary.`;
+            ? `Overlay displayed. You MUST make at least ${remainingCalls} more tool calls before providing final summary.`
+            : `Overlay displayed successfully. Continue adding elements or provide final summary.`;
 
           // Add function response to continue the loop
           const functionResponse = {
@@ -574,7 +511,7 @@ export const analyzeMediaAgentic = async (
         // Model tried to complete before minimum iterations - force it to continue
         log('Model tried to complete early, forcing continuation. Tool calls:', toolCallCount);
 
-        const forceMessage = `You have only made ${toolCallCount} tool calls. You MUST use the show_overlay tool at least ${MIN_ITERATIONS - toolCallCount} more times before providing your final summary. Continue with stage="think" or stage="diagram" to add more analysis elements.`;
+        const forceMessage = `You have only made ${toolCallCount} tool calls. You MUST use the show_overlay tool at least ${MIN_ITERATIONS - toolCallCount} more times before providing your final summary. Continue adding more visual elements.`;
 
         contents.push({
           role: 'user',
