@@ -86,7 +86,7 @@ const App: React.FC = () => {
 
       {/* Header - only show on upload screen */}
       {!media && (
-        <header className="h-16 border-b border-slate-800 px-6 flex items-center shrink-0">
+        <header className="h-14 border-b border-slate-800 px-6 flex items-center justify-center shrink-0">
           <h1 className="text-lg font-semibold tracking-tight">detextit</h1>
         </header>
       )}
@@ -95,8 +95,13 @@ const App: React.FC = () => {
       <main className="flex-1 relative overflow-hidden">
         {!media ? (
           <div className="h-full w-full flex items-center justify-center p-6">
-            <div className="w-full max-w-xl">
-              <UploadZone onUpload={handleUpload} isProcessing={false} />
+            <div className="w-full max-w-xl flex flex-col items-center">
+              <p className="text-slate-400 text-center mb-6 max-w-md">
+                Gemini Flash agentic analysis for frame-by-frame gameplays and tactical breakdowns.
+              </p>
+              <div className="w-full">
+                <UploadZone onUpload={handleUpload} isProcessing={false} />
+              </div>
             </div>
           </div>
         ) : (
