@@ -8,3 +8,7 @@ google-genai-docs
 
 *.DS_Store
 .env
+
+remotion
+out
+public/demo*
