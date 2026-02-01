@@ -75,7 +75,7 @@ const App: React.FC = () => {
           <div className="h-full w-full flex items-center justify-center p-6">
             <div className="w-full max-w-xl flex flex-col items-center">
               <p className="text-slate-400 text-center mb-6 max-w-md">
-                AI-powered visual analysis for sports plays, diagrams, and tactical breakdowns.
+                Gemini Flash agentic analysis for frame-by-frame gameplays and tactical breakdowns.
               </p>
               <div className="w-full">
                 <UploadZone onUpload={handleUpload} isProcessing={false} />
